@@ -898,6 +898,116 @@ function save(){
 }
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,8);}
 
+
+/* =============================================================================
+   4c) DISCORD-ANMELDUNG
+   OAuth2 im Implicit Flow: der Browser holt sich das Token direkt bei Discord,
+   es gibt keinen Server und kein Client-Secret. Gebraucht wird nur die
+   Client-ID der eigenen Discord-Anwendung. Funktioniert ausschliesslich ueber
+   http(s) - bei einer lokal geoeffneten Datei (file://) laesst Discord keine
+   Rueckleitung zu.
+   ============================================================================= */
+const DISCORD_API="https://discord.com/api";
+const dcCfg=()=>Object.assign({clientId:"",erlaubt:"",pflicht:false},(DB.settings||{}).discord);
+const dcRedirect=()=>location.origin+location.pathname;
+/* Nur dort moeglich, wo Discord zurueckleiten darf */
+const dcMoeglich=()=>/^https?:$/.test(location.protocol);
+let dcUser=null;
+
+function dcLoad(){
+  try{ const r=localStorage.getItem(KEY+".discord"); if(!r) return null;
+    const d=JSON.parse(r);
+    if(!d||!d.token||(d.expires&&Date.now()>d.expires)){ localStorage.removeItem(KEY+".discord"); return null; }
+    return d;
+  }catch(e){ return null; }
+}
+function dcStore(d){ try{ localStorage.setItem(KEY+".discord",JSON.stringify(d)); }catch(e){} }
+function dcLogout(){ dcUser=null; try{ localStorage.removeItem(KEY+".discord"); }catch(e){}
+  renderLawyerBar(); toast("Von Discord abgemeldet"); }
+
+function dcLogin(){
+  const c=dcCfg();
+  if(!c.clientId) return mDiscord();
+  if(!dcMoeglich()) return alert("Die Discord-Anmeldung braucht eine Web-Adresse (https).\n\n"+
+    "Bei einer lokal geoeffneten Datei laesst Discord die Rueckleitung nicht zu. "+
+    "Nutze die GitHub-Pages-Fassung deines Tools.");
+  const state=Math.random().toString(36).slice(2)+Date.now().toString(36);
+  try{ sessionStorage.setItem(KEY+".dcstate",state); }catch(e){}
+  location.href=DISCORD_API+"/oauth2/authorize"
+    +"?client_id="+encodeURIComponent(c.clientId)
+    +"&redirect_uri="+encodeURIComponent(dcRedirect())
+    +"&response_type=token&scope=identify&prompt=none&state="+encodeURIComponent(state);
+}
+
+/* Rueckkehr von Discord: das Token steht im Anker der URL */
+async function dcCallback(){
+  if(!location.hash||location.hash.indexOf("access_token=")<0) return false;
+  const f=new URLSearchParams(location.hash.slice(1));
+  const token=f.get("access_token"), state=f.get("state");
+  let erwartet=null; try{ erwartet=sessionStorage.getItem(KEY+".dcstate"); sessionStorage.removeItem(KEY+".dcstate"); }catch(e){}
+  history.replaceState(null,"",location.pathname+location.search);
+  if(!token) return false;
+  if(erwartet&&state!==erwartet){ toast("Anmeldung abgebrochen – Pruefwert stimmt nicht"); return false; }
+  const dauer=(+f.get("expires_in")||604800)*1000;
+  try{
+    const r=await fetch(DISCORD_API+"/users/@me",{headers:{Authorization:"Bearer "+token}});
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    const u=await r.json();
+    const c=dcCfg(), liste=(c.erlaubt||"").split(/[\s,;]+/).filter(Boolean);
+    if(liste.length&&liste.indexOf(u.id)<0){
+      alert("Dieser Discord-Account ist fuer diese Kanzlei nicht freigeschaltet.\n\nDeine ID: "+u.id);
+      return false;
+    }
+    dcUser={id:u.id,name:u.global_name||u.username,tag:u.username,
+            avatar:u.avatar?"https://cdn.discordapp.com/avatars/"+u.id+"/"+u.avatar+".png?size=64":""};
+    dcStore({token,expires:Date.now()+dauer,user:dcUser});
+    if(!DB.profile.name&&dcUser.name){ DB.profile.name=dcUser.name; save(); }
+    toast("Angemeldet als "+dcUser.name);
+    return true;
+  }catch(e){ toast("Discord antwortet nicht: "+e.message); return false; }
+}
+
+/* Einstellungen */
+function mDiscord(){
+  const c=dcCfg();
+  openModal(`<form id="dcForm">
+    <div class="modal-h"><h3>Discord-Anmeldung</h3><button type="button" class="x" data-act="close">×</button></div>
+    <div class="modal-b">
+      ${dcMoeglich()?"":'<div class="box warn">Diese Datei laeuft lokal ('+esc(location.protocol)+'). '+
+        'Discord leitet nur an eine Web-Adresse zurueck – die Anmeldung funktioniert erst in der GitHub-Pages-Fassung.</div>'}
+      <div class="box info">So bekommst du die Client-ID:
+        <div style="margin-top:6px">1. <b>discord.com/developers/applications</b> öffnen und <b>New Application</b> anlegen.</div>
+        <div>2. Links auf <b>OAuth2</b>, dort die <b>Client ID</b> kopieren.</div>
+        <div>3. Unter <b>Redirects</b> genau diese Adresse eintragen und speichern:</div>
+        <div class="mono" style="margin:6px 0;padding:8px 10px;background:var(--card2);border-radius:8px;word-break:break-all">${esc(dcRedirect())}</div>
+        <div>Ein Secret wird nicht gebraucht – die Client-ID ist öffentlich.</div>
+      </div>
+      <label class="f"><span>Client-ID</span>
+        <input type="text" name="clientId" value="${esc(c.clientId)}" placeholder="z. B. 1234567890123456789" autocomplete="off"></label>
+      <label class="f"><span>Zugelassene Discord-IDs (optional)</span>
+        <textarea name="erlaubt" rows="3" placeholder="eine ID je Zeile – leer lassen heißt: jeder darf sich anmelden">${esc(c.erlaubt)}</textarea>
+        <div class="hint">Trag hier dich und deine Kollegen ein, wenn das Tool öffentlich im Netz steht.
+        Die eigene ID findest du in Discord unter Einstellungen → Erweitert → Entwicklermodus, dann Rechtsklick auf dich → ID kopieren.</div></label>
+      <label class="chk"><input type="checkbox" name="pflicht" ${c.pflicht?"checked":""}>
+        <div><div class="t">Anmeldung verlangen</div>
+        <div class="s">Ohne Anmeldung wird nur ein Hinweis angezeigt. Schützt nicht die Daten – sie liegen weiterhin
+        im Browser des Besuchers – sondern hält nur Unbefugte von der Oberfläche fern.</div></div></label>
+      <div class="box warn">Die Anmeldung sagt dir <b>wer</b> da ist. Sie legt keine Daten auf einem Server ab:
+      jeder Angemeldete arbeitet weiter in seinem eigenen Browser. Zum Austausch mit Kollegen dienen Export und Import unter <b>Daten</b>.</div>
+    </div>
+    <div class="modal-f"><button type="submit" class="btn primary">Speichern</button>
+      ${dcUser?'<button type="button" class="btn" data-act="dcLogout">Abmelden</button>':""}
+      <button type="button" class="btn ghost" data-act="close">Abbrechen</button></div></form>`,"narrow");
+  document.getElementById("dcForm").onsubmit=e=>{
+    e.preventDefault();
+    const f=new FormData(e.target);
+    DB.settings.discord={clientId:(f.get("clientId")||"").trim(),
+                         erlaubt:(f.get("erlaubt")||"").trim(),
+                         pflicht:!!f.get("pflicht")};
+    save();closeModal();renderLawyerBar();toast("Discord-Einstellungen gespeichert");
+  };
+}
+
 /* =============================================================================
    5) Helfer
    ============================================================================= */
@@ -1182,11 +1292,19 @@ const NAV=[
 function renderLawyerBar(){
   const bar=document.getElementById("lawbar"); if(!bar) return;
   const p=me();
+  const c=dcCfg();
   bar.innerHTML=`<div class="lbl">Rechtsanwalt</div>
-    <div style="font-size:13.5px;margin:2px 0 6px">${p.name?esc(p.name):'<span class="muted">noch kein Name</span>'}</div>
+    <div style="font-size:13.5px;margin:2px 0 6px;display:flex;align-items:center;gap:7px">
+      ${dcUser&&dcUser.avatar?'<img src="'+esc(dcUser.avatar)+'" alt="" width="20" height="20" style="border-radius:50%;flex:0 0 20px">':""}
+      <span>${p.name?esc(p.name):'<span class="muted">noch kein Name</span>'}</span></div>
+    ${dcUser?'<div class="hint" style="margin:0 0 6px" title="Discord-ID '+esc(dcUser.id)+'">\u2713 '+esc(dcUser.tag)+'</div>':""}
     <div class="row">
       <button class="btn ghost sm" data-act="editProfile">✎ Profil</button>
       <button class="btn ghost sm" data-act="editRavo">⚙ Regeln</button>
+    </div>
+    <div class="row" style="margin-top:5px">
+      ${dcUser?'<button class="btn ghost sm" data-act="dcLogout">Abmelden</button>'
+              :'<button class="btn ghost sm" data-act="dcLogin">'+(c.clientId?"Mit Discord anmelden":"Discord einrichten")+'</button>'}
     </div>
     ${(!p.name||!p.pass||!p.phone)?'<div class="hint" style="color:var(--warn)">Profil unvollständig</div>':""}`;
 }
@@ -3666,6 +3784,9 @@ document.addEventListener("click",e=>{
       }
       case "openClient": closeModal(); return mClientView(id);
       case "editProfile": return mProfile();
+      case "dcLogin":   return dcUser?mDiscord():dcLogin();
+      case "dcLogout":  closeModal(); return dcLogout();
+      case "dcSetup":   return mDiscord();
       case "openRechner": return mRechner();
       case "newCase": ui.caseTab="fall"; return DB.clients.length?mCase():(alert("Lege zuerst einen Mandanten an."),mClient());
       case "newCaseFor": closeModal(); ui.caseTab="fall"; return mCase(null,id);
@@ -3749,6 +3870,15 @@ window.addEventListener("beforeunload",save);
    ============================================================================= */
 document.documentElement.dataset.theme=DB.theme||"dark";
 render();
+
+/* Discord: gespeicherte Anmeldung aufnehmen oder Rueckleitung auswerten */
+(async()=>{
+  const d=dcLoad();
+  if(d&&d.user){ dcUser=d.user; renderLawyerBar(); }
+  if(await dcCallback()) renderLawyerBar();
+  const c=dcCfg();
+  if(c.pflicht&&!dcUser&&c.clientId&&dcMoeglich()) toast("Bitte mit Discord anmelden");
+})();
 
 (async()=>{
   try{ if(window.claude&&claude.use){ SYNC=await claude.use("artifact"); DL=await claude.use("downloads"); } }
