@@ -11,3 +11,6 @@ desktop.ini
 # Editoren
 .vscode/
 .idea/
+
+# Bauartefakt, wird von build-online.py erzeugt
+online.html
