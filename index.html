@@ -704,8 +704,7 @@ const OUTCOMES={
   open:   {lbl:"Laufend",         short:"Laufend",    cls:"neutral"}
 };
 const PROCEDURES={
-  polizei: "Polizeiliche Abhandlung",
-  schnell: "Schnellverfahren",
+  polizei: "Polizeiliche Abhandlung / Schnellverfahren",
   gericht: "Ordentliches Gericht",
   revision:"Revisionsverfahren"
 };
@@ -786,6 +785,7 @@ function migrate(d){
     c.charges=c.charges||[]; c.officers=c.officers||[];
     delete c.lawyerId;
     c.procedure=c.procedure||"polizei";
+    if(c.procedure==="schnell") c.procedure="polizei";   /* fruehere eigene Verfahrensart */
     c.errors=c.errors||{};
     c.revision=c.revision||{filed:false,ref:"",result:""};
     /* altes Einzelfeld "fee" in eine RAVO-Position überführen */
@@ -1285,6 +1285,7 @@ const NAV=[
   {id:"clients",ic:"👤", lbl:"Mandanten", cnt:()=>DB.clients.length},
   {id:"cases",  ic:"📁", lbl:"Fälle",     cnt:()=>DB.cases.length},
   {id:"antrag", ic:"📄", lbl:"Schriftsätze", cnt:()=>DB.docs.length},
+  {id:"beamte", ic:"👮", lbl:"Beamtenradar", cnt:()=>groupBy(DB.cases,"officers").length},
   {id:"fees",   ic:"💰", lbl:"Honorar",   cnt:()=>DB.cases.filter(c=>feeOpen(c)>0).length+DB.docs.filter(l=>l.fee&&!l.paid&&l.type!=="rechnung").length, alert:1},
   {id:"law",    ic:"📖", lbl:"Gesetze",   cnt:()=>CATALOG.length},
   {id:"data",   ic:"💾", lbl:"Daten"}
@@ -1318,7 +1319,7 @@ function renderNav(){
 function render(){
   renderNav();
   document.getElementById("main").innerHTML=
-    ({dash:vDash,clients:vClients,cases:vCases,antrag:vDocs,fees:vFees,law:vLaw,data:vData}[view]||vDash)();
+    ({dash:vDash,clients:vClients,cases:vCases,antrag:vDocs,beamte:vBeamte,fees:vFees,law:vLaw,data:vData}[view]||vDash)();
   renderLawyerBar();
 }
 const go=v=>{view=v;render();};
@@ -2852,6 +2853,130 @@ function vFees(){
 /* =============================================================================
    14) Ansicht: Gesetze (Katalog + Rechtsgrundlagen)
    ============================================================================= */
+
+/* =============================================================================
+   Beamtenradar - was aus deinen Faellen ueber die Exekutive hervorgeht
+   ============================================================================= */
+function beamteRadar(){
+  const g=groupBy(DB.cases,"officers").map(x=>{
+    const err=x.list.filter(c=>errCount(c)).length;
+    const dS=x.list.reduce((a,c)=>a+(c.demand?.stars||0),0);
+    const fS=x.list.reduce((a,c)=>a+(c.final?.stars||0),0);
+    const dF=x.list.reduce((a,c)=>a+(c.demand?.fine||0),0);
+    const fF=x.list.reduce((a,c)=>a+(c.final?.fine||0),0);
+    const beh=[...new Set(x.list.map(c=>c.agency).filter(Boolean))];
+    const letzte=x.list.map(c=>c.date).filter(Boolean).sort().pop()||"";
+    return {...x,err,dS,fS,dF,fF,beh,letzte};
+  });
+  const k=ui.brs||"n";
+  g.sort((a,b)=> k==="err"?(b.err/b.s.n)-(a.err/a.s.n)
+               : k==="frei"?b.s.freeRate-a.s.freeRate
+               : k==="letzte"?(b.letzte||"").localeCompare(a.letzte||"")
+               : b.s.n-a.s.n);
+  return g;
+}
+function vBeamte(){
+  const g=beamteRadar();
+  const stas=groupBy(DB.cases,"sta").sort((a,b)=>b.s.n-a.s.n);
+  const k=ui.brs||"n";
+  const sortBtn=(v,t)=>'<button data-brsort="'+v+'" class="'+(k===v?"on":"")+'">'+t+'</button>';
+  const gesErr=DB.cases.filter(c=>errCount(c)).length;
+  return `
+  <header class="top"><div><h2>Beamtenradar</h2>
+    <div class="sub">${g.length} Beamte \u00b7 ${stas.length} Staatsanw\u00e4lte \u00b7 aus ${DB.cases.length} F\u00e4llen</div></div>
+    <div class="spacer"></div></header>
+
+  ${g.length?"":'<div class="card empty">Noch keine Beamten erfasst. Trag sie beim Fall unter <b>Festnehmende Beamte</b> ein, dann entsteht hier von selbst ein Bild.</div>'}
+  ${g.length?`
+  <div class="kpis">
+    <div class="kpi"><div class="lbl">Erfasste Beamte</div><div class="val">${g.length}</div><div class="sub">${DB.cases.length} Festnahmen</div></div>
+    <div class="kpi ok"><div class="lbl">Bester Schnitt gegen</div><div class="val" style="font-size:17px">${esc([...g].sort((a,b)=>b.s.freeRate-a.s.freeRate)[0].key)}</div>
+      <div class="sub">${[...g].sort((a,b)=>b.s.freeRate-a.s.freeRate)[0].s.freeRate}% komplett raus</div></div>
+    <div class="kpi bad"><div class="lbl">Meiste Fehler</div><div class="val" style="font-size:17px">${(()=>{const x=[...g].filter(y=>y.err).sort((a,b)=>b.err/b.s.n-a.err/a.s.n)[0];return x?esc(x.key):"\u2013";})()}</div>
+      <div class="sub">${(()=>{const x=[...g].filter(y=>y.err).sort((a,b)=>b.err/b.s.n-a.err/a.s.n)[0];return x?x.err+" von "+x.s.n+" Abhandlungen":"keine Fehler erfasst";})()}</div></div>
+    <div class="kpi ${gesErr?"bad":"ok"}"><div class="lbl">Fehlerhafte Abhandlungen</div><div class="val">${gesErr}</div>
+      <div class="sub">${pct(gesErr,DB.cases.length||1)}% aller F\u00e4lle</div></div>
+  </div>
+
+  <div class="toolbar">
+    <span class="hint" style="margin:0">sortieren nach</span>
+    <div class="bookfilter">${sortBtn("n","Festnahmen")}${sortBtn("frei","Freispruchquote")}${sortBtn("err","Fehlerquote")}${sortBtn("letzte","zuletzt gesehen")}</div>
+  </div>
+
+  <div class="tblwrap"><table>
+    <thead><tr><th>Beamter</th><th>Beh\u00f6rde</th><th>Festnahmen</th><th>Ausgang</th><th>rausgeholt</th>
+      <th>Fehlerquote</th><th>fordert \u00f8</th><th>zuletzt</th></tr></thead>
+    <tbody>${g.map(x=>`<tr class="click" data-officer="${esc(x.key)}">
+      <td><b>${esc(x.key)}</b></td>
+      <td><div class="tags">${x.beh.map(b=>'<span class="pill tag">'+esc(b)+'</span>').join("")||'<span class="muted">\u2013</span>'}</div></td>
+      <td class="mono">${x.s.n}</td>
+      <td><div class="tags">${x.s.freed?'<span class="pill ok">'+x.s.freed+'</span>':""}${x.s.reduced?'<span class="pill warn">'+x.s.reduced+'</span>':""}${x.s.none?'<span class="pill bad">'+x.s.none+'</span>':""}${x.s.laufend?'<span class="pill neutral">'+x.s.laufend+'</span>':""}</div></td>
+      <td class="mono ${x.s.freeRate>=50?"ok-tx":""}">${x.s.freeRate}%</td>
+      <td class="mono ${x.err?"bad-tx":"muted"}">${x.err?x.err+"/"+x.s.n+" \u00b7 "+pct(x.err,x.s.n)+"%":"\u2013"}</td>
+      <td class="mono muted">${(x.dS/x.s.n).toFixed(1)} \u2b50 / ${money(Math.round(x.dF/x.s.n))}</td>
+      <td class="mono muted">${dateDE(x.letzte)}</td></tr>`).join("")}
+    </tbody></table></div>
+  <div class="hint">Ein Klick auf eine Zeile \u00f6ffnet die Akte des Beamten. Fehlerquote = Anteil seiner Abhandlungen,
+  in denen das Tool einen Versto\u00df nach \u00a735 StPO erkannt hat.</div>`:""}
+
+  ${stas.length?`<div class="sec-title">Staatsanw\u00e4lte und Richter</div>
+  <div class="tblwrap"><table>
+    <thead><tr><th>Name</th><th>Verfahren</th><th>Ausgang</th><th>deine Quote</th><th>dr\u00fcckt im Schnitt</th></tr></thead>
+    <tbody>${stas.map(x=>{
+      const red=x.list.filter(c=>c.outcome==="reduced");
+      const schnitt=red.length?Math.round(red.reduce((a,c)=>a+reductionPct(c),0)/red.length):0;
+      return `<tr class="click" data-sta="${esc(x.key)}">
+        <td><b>${esc(x.key)}</b></td><td class="mono">${x.s.n}</td>
+        <td><div class="tags">${x.s.freed?'<span class="pill ok">'+x.s.freed+'</span>':""}${x.s.reduced?'<span class="pill warn">'+x.s.reduced+'</span>':""}${x.s.none?'<span class="pill bad">'+x.s.none+'</span>':""}${x.s.laufend?'<span class="pill neutral">'+x.s.laufend+'</span>':""}</div></td>
+        <td class="mono ${x.s.rate>=50?"ok-tx":""}">${x.s.closed?x.s.rate+"%":"\u2013"}</td>
+        <td class="mono muted">${schnitt?"\u2212"+schnitt+"%":"\u2013"}</td></tr>`;}).join("")}
+    </tbody></table></div>`:""}`;
+}
+
+/* Akte eines Beamten oder Staatsanwalts */
+function mPerson(name,feld){
+  const list=DB.cases.filter(c=>feld==="sta"?c.sta===name:(c.officers||[]).includes(name));
+  if(!list.length) return;
+  const s=stats(list), err=list.filter(c=>errCount(c));
+  const beh=[...new Set(list.map(c=>c.agency).filter(Boolean))];
+  const partner=groupBy(list,feld==="sta"?"officers":"sta").sort((a,b)=>b.s.n-a.s.n).slice(0,5);
+  const vorw=groupBy(list,"charges").sort((a,b)=>b.s.n-a.s.n).slice(0,6);
+  /* welche Fehlerarten ihm nachgewiesen sind */
+  const arten={};
+  err.forEach(c=>Object.entries(allErrors(c)).forEach(([k,v])=>{arten[k]=(arten[k]||0)+1;}));
+  const d=(t,v)=>`<div><div class="dt">${t}</div><div class="dd">${v}</div></div>`;
+  openModal(`
+    <div class="modal-h"><h3>${esc(name)}</h3>
+      <span class="pill tag">${feld==="sta"?"Staatsanwalt / Richter":"Beamter"}</span>
+      <button type="button" class="x" data-act="close">\u00d7</button></div>
+    <div class="modal-b">
+      <div class="detail-grid">
+        ${d("Verfahren",'<span class="mono">'+s.n+'</span>')}
+        ${d("Beh\u00f6rde",beh.length?beh.map(esc).join(", "):'<span class="muted">\u2013</span>')}
+        ${d("deine Erfolgsquote",s.closed?'<span class="mono ok-tx">'+s.rate+'%</span>':'<span class="muted">\u2013</span>')}
+        ${d("komplett rausgeholt",'<span class="mono">'+s.freed+' von '+s.n+'</span>')}
+        ${d("Abhandlungsfehler",err.length?'<span class="mono bad-tx">'+err.length+' \u00b7 '+pct(err.length,s.n)+'%</span>':'<span class="muted">keine</span>')}
+        ${d("erspart",'<span class="mono ok-tx">'+s.savedS+' \u2b50 / '+money(s.savedF)+'</span>')}
+      </div>
+
+      ${Object.keys(arten).length?`<div class="box bad" style="margin-top:14px"><b>Was ihm nachgewiesen ist:</b>
+        ${Object.entries(arten).sort((a,b)=>b[1]-a[1]).map(([k,n])=>{const f=FEHLER.find(x=>x.k===k);
+          return '<div style="margin-top:5px">\u2022 '+esc(f?f.t:k)+' <span class="mono">'+n+'\u00d7</span></div>';}).join("")}
+        <div style="margin-top:8px">Bei seiner n\u00e4chsten Festnahme lohnt der Blick genau dorthin.</div></div>`:""}
+
+      ${partner.length?`<div class="sec-title">Arbeitet meist mit</div>
+        <div class="tags">${partner.map(p=>'<span class="pill tag">'+esc(p.key)+' \u00b7 '+p.s.n+'</span>').join("")}</div>`:""}
+
+      ${vorw.length?`<div class="sec-title">Wirft am h\u00e4ufigsten vor</div>
+        <div class="tags">${vorw.map(v=>{const e=catFind(v.key);
+          return '<span class="pill tag" title="'+esc(v.key)+'">'+esc(e?e.b+" "+e.p:v.key)+' \u00b7 '+v.s.n+'</span>';}).join("")}</div>`:""}
+
+      <div class="sec-title">Alle Verfahren</div>
+      ${caseTable([...list].sort(byDateDesc),{compact:true})}
+    </div>
+    <div class="modal-f"><button type="button" class="btn ghost" data-act="close">Schlie\u00dfen</button></div>`);
+}
+
 function vLaw(){
   const tab=ui.lawTab||"katalog";
   return `
@@ -3820,6 +3945,9 @@ document.addEventListener("click",e=>{
   const cr=e.target.closest("[data-case]");
   if(cr){e.preventDefault();return mCaseView(cr.dataset.case);}
   const kr=e.target.closest("[data-client]"); if(kr) return mClientView(kr.dataset.client);
+  const of=e.target.closest("[data-officer]"); if(of) return mPerson(of.dataset.officer,"officers");
+  const st=e.target.closest("[data-sta]");     if(st) return mPerson(st.dataset.sta,"sta");
+  const bs=e.target.closest("[data-brsort]");  if(bs){ui.brs=bs.dataset.brsort;return render();}
   /* Hintergrund schließt nur, wenn der Klick auch dort begonnen hat */
   if(e.target.matches("[data-overlay]")&&zeigerStart.aufOverlay) closeModal();
 });
