@@ -230,6 +230,18 @@ tr.click{cursor:pointer}
 .doc h1{font-size:16pt;text-align:center;letter-spacing:.06em;text-transform:uppercase;margin:0 0 4mm;font-weight:700}
 .doc .kanzlei{text-align:center;font-size:10pt;letter-spacing:.09em;text-transform:uppercase;color:#3c4756;
   border-bottom:1.5pt solid #12181f;padding-bottom:3mm;margin-bottom:8mm}
+/* Kanzleilogo: klein neben dem Briefkopf, optional blass hinter dem Text */
+.doc .kanzleikopf{display:flex;align-items:center;justify-content:center;gap:5mm;
+  border-bottom:1.5pt solid #12181f;padding-bottom:3mm;margin-bottom:8mm}
+.doc .kanzleikopf .kanzlei{border:0;padding:0;margin:0;text-align:left}
+.doc .kanzleikopf img{height:16mm;width:auto;flex:0 0 auto;object-fit:contain}
+.doc .kanzleikopf.nurlogo{justify-content:center}
+.doc .wz{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  pointer-events:none;z-index:0}
+.doc .wz img{width:120mm;max-width:70%;opacity:.055}
+.doc{position:relative}
+.doc .kopfblock,.doc p,.doc h2,.doc table,.doc .schluss,.doc .fuss,.doc ol,.doc ul{position:relative;z-index:1}
+.doc .fusslogo{height:7mm;width:auto;vertical-align:-2mm;margin-right:2mm;opacity:.8}
 .doc .abs{font-size:9pt;color:#5a6879;border-bottom:.4pt solid #c3ccd8;padding-bottom:1.5mm;margin-bottom:6mm}
 .doc .head2{display:flex;gap:10mm;margin-bottom:9mm}
 .doc .empf{flex:1;font-size:12pt;line-height:1.5}
@@ -287,6 +299,9 @@ tr.click{cursor:pointer}
   .doc .sign,.doc .fuss{break-before:avoid;page-break-before:avoid}
   /* Tabellenkopf auf jeder Seite wiederholen */
   .doc table.pos thead{display:table-header-group}
+  /* Logo und Wasserzeichen muessen beim Druck erhalten bleiben */
+  .doc img,.doc .wz img{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .doc .wz{position:fixed;inset:0}
   .doc table.pos tfoot{display:table-row-group}
   .doc .abschnitt{margin-top:6mm}
   a[href]:after{content:""}
@@ -2030,8 +2045,12 @@ function docHtml(d){
     return '<p>'+html.replace(/\n/g,"<br>")+'</p>';
   }).join("");
   return `<div class="doc">
+    ${logoAlsWz()?'<div class="wz"><img src="'+esc(logoBild())+'" alt=""></div>':""}
     <div class="kopfblock">
-      ${kopf.length?'<div class="kanzlei">'+kopf.map(z=>esc(z)).join("<br>")+'</div>':""}
+      ${(kopf.length||logoImKopf())?(logoImKopf()
+        ? '<div class="kanzleikopf'+(kopf.length?"":" nurlogo")+'"><img src="'+esc(logoBild())+'" alt="">'+
+          (kopf.length?'<div class="kanzlei">'+kopf.map(z=>esc(z)).join("<br>")+'</div>':"")+'</div>'
+        : '<div class="kanzlei">'+kopf.map(z=>esc(z)).join("<br>")+'</div>'):""}
       <div class="abs">${esc(absender)}</div>
       <div class="head2">
         <div class="empf">${empf||"&nbsp;"}</div>
@@ -2068,6 +2087,20 @@ function briefkopf(){
   return [p.kanzlei||p.name||"", "Los Santos City · San Andreas"].filter(Boolean);
 }
 const briefkopfText=()=>briefkopf().join("\n");
+
+/* Kanzleilogo: liegt als Datenadresse im Profil, wird also mit exportiert
+   und funktioniert ohne Netz. platz: aus | kopf | kopfwz | wz            */
+const logoBild =()=>(me().logo||"");
+const logoPlatz=()=>me().logoPlatz||"kopf";
+const logoAn   =()=>!!logoBild()&&logoPlatz()!=="aus";
+const logoImKopf=()=>logoAn()&&/^kopf/.test(logoPlatz());
+const logoAlsWz =()=>logoAn()&&/wz$/.test(logoPlatz());
+const LOGO_PLAETZE={
+  kopf:  "Klein im Briefkopf",
+  kopfwz:"Im Briefkopf und blass hinter dem Text",
+  wz:    "Nur blass hinter dem Text",
+  aus:   "Nicht anzeigen"
+};
 
 /* Unterschrift: Namenszug in Schreibschrift über der Linie */
 const sigBlock=(name,rolle)=>`<div class="sig">
@@ -2706,15 +2739,71 @@ function mProfile(){
         <textarea name="briefkopf" rows="3" placeholder="bleibt leer = kein Briefkopf">${esc(briefkopfText())}</textarea>
         <div class="hint">Steht ganz oben auf jedem Schriftsatz – eine Zeile je Textzeile. Schreib hier rein, was du willst;
         lässt du das Feld leer, erscheint gar kein Briefkopf.</div></label>
+
+      <div class="sec-title">Kanzleilogo</div>
+      <div class="f-row">
+        <div>
+          <div class="dt" style="margin-bottom:6px">Bild</div>
+          <div id="logoBox"></div>
+          <div class="row" style="margin-top:8px">
+            <button type="button" class="btn sm" data-act="logoWaehlen">Bild wählen …</button>
+            ${logoBild()?'<button type="button" class="btn ghost sm" data-act="logoWeg">entfernen</button>':""}
+          </div>
+          <input type="file" id="logoFile" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden>
+          <div class="hint">PNG, JPG, WebP oder SVG. Das Bild wird auf 360 Pixel verkleinert und im Profil gespeichert –
+          es liegt damit in deiner Sicherung und funktioniert ohne Netz.</div>
+        </div>
+        <label class="f"><span>Platzierung</span>
+          <select name="logoPlatz">
+            ${Object.entries(LOGO_PLAETZE).map(([k,v])=>'<option value="'+k+'"'+(logoPlatz()===k?" selected":"")+'>'+v+'</option>').join("")}
+          </select>
+          <div class="hint">Im Briefkopf steht es klein neben dem Kanzleinamen. Als Wasserzeichen liegt es sehr blass
+          hinter dem Text und wiederholt sich beim Druck auf jeder Seite.</div></label>
+      </div>
       <div class="box info">Name, Reisepassnummer und Telefonnummer stehen in jedem Schriftsatz (§7 II d RAVO).
       Aus dem Namen werden die Initialen für die Aktenzeichen gebildet (§41 II StPO) – aktuell <b>${esc(initials())}</b>.
       Organisationsanwälte dürfen nach §8 IV RAVO nur staatliche Beamte vertreten und keine Waffe führen.</div>
     </div>
     <div class="modal-f"><button type="submit" class="btn primary">Speichern</button>
       <button type="button" class="btn ghost" data-act="close">Abbrechen</button></div></form>`,"narrow");
-  document.getElementById("profForm").onsubmit=e=>{
+  const form=document.getElementById("profForm");
+  let logo=logoBild();
+  const zeigeLogo=()=>{
+    form.querySelector("#logoBox").innerHTML=logo
+      ? '<img src="'+esc(logo)+'" alt="Kanzleilogo" style="max-height:70px;max-width:170px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px">'
+      : '<div class="hint" style="margin:0">noch kein Logo hinterlegt</div>';
+  };
+  zeigeLogo();
+  form.querySelector("#logoFile").addEventListener("change",e=>{
+    const f=e.target.files&&e.target.files[0]; if(!f) return;
+    if(f.size>4*1024*1024) return toast("Das Bild ist zu gro\u00df \u2013 h\u00f6chstens 4 MB");
+    const r=new FileReader();
+    r.onload=()=>{
+      if(f.type==="image/svg+xml"){ logo=r.result; zeigeLogo(); return; }
+      const img=new Image();
+      img.onload=()=>{
+        const max=360, k=Math.min(1,max/Math.max(img.width,img.height));
+        const cv=document.createElement("canvas");
+        cv.width=Math.round(img.width*k); cv.height=Math.round(img.height*k);
+        cv.getContext("2d").drawImage(img,0,0,cv.width,cv.height);
+        logo=cv.toDataURL("image/png");
+        zeigeLogo(); toast("Logo \u00fcbernommen \u2013 noch speichern");
+      };
+      img.onerror=()=>toast("Das Bild konnte nicht gelesen werden");
+      img.src=r.result;
+    };
+    r.readAsDataURL(f);
+  });
+  form.addEventListener("click",e=>{
+    const a=e.target.closest("[data-act]"); if(!a) return;
+    if(a.dataset.act==="logoWaehlen"){ e.preventDefault(); form.querySelector("#logoFile").click(); }
+    if(a.dataset.act==="logoWeg"){ e.preventDefault(); logo=""; zeigeLogo(); toast("Logo entfernt \u2013 noch speichern"); }
+  });
+  form.onsubmit=e=>{
     e.preventDefault();
-    Object.assign(DB.profile,Object.fromEntries(new FormData(e.target)));
+    const f=Object.fromEntries(new FormData(e.target));
+    delete f.logoFile;
+    Object.assign(DB.profile,f,{logo});
     save();closeModal();render();toast("Anwaltsdaten gespeichert");
   };
 }
