@@ -243,6 +243,14 @@ tr.click{cursor:pointer}
 .doc .kopfblock,.doc p,.doc h2,.doc table,.doc .schluss,.doc .fuss,.doc ol,.doc ul{position:relative;z-index:1}
 .doc .fusslogo{height:7mm;width:auto;vertical-align:-2mm;margin-right:2mm;opacity:.8}
 /* Steckbrief des Verfahrens: schmale Beschriftungsspalte, keine Kopfzeile */
+/* Leistungsnachweis: viele Zeilen, deshalb enger gesetzt */
+.doc table.nachweis{font-size:9.5pt}
+.doc table.nachweis td,.doc table.nachweis th{padding:1.6mm 2mm}
+.doc table.nachweis .num{text-align:right;white-space:nowrap}
+.doc table.nachweis tbody tr:nth-child(even){background:#f4f6f9}
+.doc .nwkopf{display:flex;gap:8mm;flex-wrap:wrap;margin:0 0 6mm;font-size:10.5pt}
+.doc .nwkopf div span{display:block;font-size:9pt;color:#5a6879;letter-spacing:.04em;text-transform:uppercase}
+.doc .nwsumme{margin-top:5mm;border-top:1pt solid #12181f;padding-top:3mm;font-size:11pt}
 .doc table.vorgang td:first-child{width:52mm;color:#3c4756}
 .doc table.vorgang td{vertical-align:top}
 .doc table.vorgang td.r,.doc table.vorgang td:last-child{text-align:left}
@@ -2970,7 +2978,8 @@ function vFees(){
   <header class="top"><div><h2>Honorar</h2><div class="sub">Gebührenordnung nach RAVO §4 · Dokumentationspflicht nach RAVO §3 V</div></div>
     <div class="spacer"></div>
     <button class="btn" data-act="editRavo">⚙ Berechnung &amp; Gebühren</button>
-    <button class="btn primary" data-act="exportDoku">⬇ Nachweis der letzten ${DOKU_TAGE} Tage</button></header>
+    <button class="btn primary" data-act="exportDoku">🖨 Nachweis als PDF (${DOKU_TAGE} Tage)</button>
+    <button class="btn" data-act="exportDokuCsv">⬇ als Tabelle</button></header>
   <div class="kpis">
     <div class="kpi"><div class="lbl">Abgerechnet gesamt</div><div class="val" style="font-size:21px">${money(gesamt)}</div><div class="sub">${fees.length} Positionen</div></div>
     <div class="kpi bad"><div class="lbl">Offen</div><div class="val" style="font-size:21px">${money(offen.reduce((a,f)=>a+(+f.amount||0),0))}</div><div class="sub">${offen.length} unbezahlt · §51 StGB</div></div>
@@ -3283,7 +3292,8 @@ function vData(){
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <button class="btn" data-act="exportCasesCsv">Fälle als CSV</button>
         <button class="btn" data-act="exportClientsCsv">Mandanten als CSV</button>
-        <button class="btn" data-act="exportDoku">RAVO-Nachweis (${DOKU_TAGE} Tage)</button></div></div>
+        <button class="btn" data-act="exportDoku">RAVO-Nachweis als PDF</button>
+        <button class="btn" data-act="exportDokuCsv">RAVO-Nachweis als Tabelle</button></div></div>
     <div class="card"><h3>Gefahrenzone</h3>
       <p class="muted" style="margin-top:0">Löscht alle Mandanten und Fälle unwiderruflich aus diesem Browser.</p>
       <button class="btn danger" data-act="wipe">Alle Daten löschen</button></div>
@@ -3955,7 +3965,102 @@ function exportClientsCsv(){
   dl("mandanten_"+stamp()+".csv",csv(rows),"text/csv");
 }
 /* Leistungsnachweis nach RAVO §3 V für die letzten 14 Tage */
+/* =============================================================================
+   Leistungsnachweis nach RAVO Paragraf 3 Abs. 5 - als druckfertiges Dokument
+   ============================================================================= */
+function dokuListe(){
+  return allFees()
+    .filter(f=>f.date&&daysBetween(f.date,today())<=DOKU_TAGE&&daysBetween(f.date,today())>=0)
+    .sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+}
+function dokuHtml(){
+  const list=dokuListe(), p=me(), kopf=briefkopf();
+  const von=dateDE(new Date(Date.now()-DOKU_TAGE*86400000).toISOString().slice(0,10)), bis=dateDE(today());
+  const summe=list.reduce((a,f)=>a+(+f.amount||0),0);
+  const offen=list.filter(f=>!f.paid).reduce((a,f)=>a+(+f.amount||0),0);
+  const ueber=list.filter(f=>(+f.amount||0)>ravoMax(f.type,f.qty));
+  /* Zusammenfassung je Mandant - das liest die Justiz zuerst */
+  const proMandant=[...list.reduce((m,f)=>{
+    const k=(f.client&&f.client.name)||"unbekannt";
+    const e=m.get(k)||{n:0,sum:0,phone:(f.client&&f.client.phone)||""};
+    e.n++; e.sum+=+f.amount||0; if(!e.phone&&f.client) e.phone=f.client.phone||"";
+    m.set(k,e); return m;
+  },new Map())].sort((a,b)=>b[1].sum-a[1].sum);
+
+  const zeile=f=>{
+    const r=RAVO[f.type]||{lbl:f.type,ref:"",per:0}, max=ravoMax(f.type,f.qty);
+    const zuviel=(+f.amount||0)>max;
+    return `<tr>
+      <td class="num">${dateDE(f.date)}</td>
+      <td>${f.client&&f.client.name?esc(f.client.name):"<i>unbekannt</i>"}</td>
+      <td class="num">${f.client&&f.client.phone?esc(f.client.phone):"—"}</td>
+      <td>${esc(r.lbl)}${f.desc?'<br><span style="color:#5a6879">'+esc(f.desc)+'</span>':""}
+        ${f.ref?'<br><span style="color:#5a6879">'+esc(f.ref)+'</span>':""}</td>
+      <td>${r.per?(f.qty||1)+" × "+r.per+" Min.":"Pauschale"}<br><span style="color:#5a6879">${esc(r.ref)}</span></td>
+      <td class="num">${money(f.amount)}${zuviel?'<br><span style="color:#a12">über Höchstsatz '+money(max)+'</span>':""}</td>
+      <td>${f.paid?"bezahlt":"offen"}</td></tr>`;
+  };
+
+  return `<div class="doc">
+    ${logoAlsWz()?'<div class="wz"><img src="'+esc(logoBild())+'" alt=""></div>':""}
+    <div class="kopfblock">
+      ${(kopf.length||logoImKopf())?(logoImKopf()
+        ? '<div class="kanzleikopf'+(kopf.length?"":" nurlogo")+'"><img src="'+esc(logoBild())+'" alt="">'+
+          (kopf.length?'<div class="kanzlei">'+kopf.map(z=>esc(z)).join("<br>")+'</div>':"")+'</div>'
+        : '<div class="kanzlei">'+kopf.map(z=>esc(z)).join("<br>")+'</div>'):""}
+      <div class="abs">${esc([p.name,p.pass?"Reisepass-Nr. "+p.pass:"",p.phone?"Tel. "+p.phone:""].filter(Boolean).join(" · "))}</div>
+      <h1>Leistungsnachweis</h1>
+      <div class="betreff" style="text-align:center;font-weight:400">nach § 3 Abs. 5 der Rechtsanwaltsverordnung</div>
+      <div class="nwkopf">
+        <div><span>Rechtsanwalt</span>${esc(p.name||"—")}</div>
+        <div><span>Zeitraum</span>${von} – ${bis}</div>
+        <div><span>Positionen</span>${list.length}</div>
+        <div><span>Gesamtbetrag</span>${money(summe)}</div>
+        <div><span>davon offen</span>${money(offen)}</div>
+        <div><span>Erstellt am</span>${new Date().toLocaleString("de-DE")}</div>
+      </div>
+    </div>
+
+    ${proMandant.length?`<h2 class="abschnitt">Übersicht nach Mandantschaft</h2>
+    <table class="pos nachweis"><thead><tr><th>Mandantschaft</th><th>Telefonnummer</th><th>Positionen</th><th>Betrag</th></tr></thead>
+      <tbody>${proMandant.map(([k,e])=>`<tr><td>${esc(k)}</td><td class="num">${esc(e.phone||"—")}</td>
+        <td class="num">${e.n}</td><td class="num">${money(e.sum)}</td></tr>`).join("")}</tbody></table>`:""}
+
+    <h2 class="abschnitt">Einzelne Leistungen</h2>
+    ${list.length?`<table class="pos nachweis">
+      <thead><tr><th>Datum</th><th>Mandantschaft</th><th>Telefon</th><th>Erbrachte Leistung</th><th>Umfang</th><th>Gebühr</th><th>Status</th></tr></thead>
+      <tbody>${list.map(zeile).join("")}</tbody>
+      <tfoot><tr><td colspan="5">Gesamtbetrag im Zeitraum</td><td class="num"><b>${money(summe)}</b></td><td></td></tr></tfoot>
+    </table>`:'<p>Im Nachweiszeitraum wurden keine vergütungspflichtigen Leistungen erbracht.</p>'}
+
+    <div class="nwsumme">
+      ${ueber.length
+        ? '<b>Hinweis:</b> '+ueber.length+' Position'+(ueber.length>1?"en überschreiten":" überschreitet")+
+          ' den Höchstsatz nach § 4 Abs. 2 RAVO.'
+        : 'Sämtliche Positionen halten die Höchstsätze nach § 4 Abs. 2 RAVO ein.'}
+      Die Aufstellung enthält zu jeder Leistung den Namen und die Telefonnummer der Mandantschaft, die erbrachte
+      Leistung, das Datum und die vereinbarte Gebühr (§ 3 Abs. 5 RAVO).
+    </div>
+
+    <div class="schluss">
+      <p class="gruss">Für die Richtigkeit</p>
+      <div class="sign">${sigBlock(p.name,"Rechtsanwalt")}</div>
+    </div>
+    <div class="fuss">Vorgelegt nach § 3 Abs. 6 RAVO. Der Nachweis umfasst die letzten ${DOKU_TAGE} Tage.
+      ${kopf.length?" · "+esc(kopf[0]):""}</div>
+  </div>`;
+}
 function exportDoku(){
+  const n=dokuListe().length;
+  const pd=document.getElementById("printDoc");
+  pd.innerHTML=dokuHtml();
+  const after=()=>{pd.innerHTML="";window.removeEventListener("afterprint",after);};
+  window.addEventListener("afterprint",after);
+  toast(n+" Positionen – Ziel „Als PDF speichern“ wählen");
+  setTimeout(()=>window.print(),60);
+}
+
+function exportDokuCsv(){
   const list=allFees().filter(f=>f.date&&daysBetween(f.date,today())<=DOKU_TAGE&&daysBetween(f.date,today())>=0);
   const rows=[["Leistungsdokumentation nach RAVO §3 V"],
     ["Rechtsanwalt",me().name||"—","Telefon",me().phone||"—"],
@@ -3970,7 +4075,7 @@ function exportDoku(){
   });
   rows.push([],["Summe","","","","",list.reduce((a,f)=>a+(+f.amount||0),0)]);
   dl("ravo_leistungsnachweis_"+stamp()+".csv",csv(rows),"text/csv");
-  toast(list.length+" Positionen exportiert");
+  toast(list.length+" Positionen als Tabelle gesichert");
 }
 function importJson(){
   const i=document.createElement("input"); i.type="file"; i.accept=".json,application/json";
@@ -4080,6 +4185,7 @@ document.addEventListener("click",e=>{
       case "exportCasesCsv": return exportCasesCsv();
       case "exportClientsCsv": return exportClientsCsv();
       case "exportDoku": return exportDoku();
+      case "exportDokuCsv": return exportDokuCsv();
       case "wipe":
         if(confirm("Wirklich ALLES löschen? Vorher exportieren!")&&confirm("Letzte Warnung – alle Mandanten und Fälle werden gelöscht.")){
           DB=structuredClone(blank);save();render();toast("Alles gelöscht");} return;
