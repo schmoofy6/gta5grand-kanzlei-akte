@@ -1773,6 +1773,48 @@ Sachverhalt: {hergang}
 
 Ich bitte um Bestätigung des Eingangs der Anzeige (§ 16 Abs. 3 StPO) und um Mitteilung des Aktenzeichens.`},
 
+unternehmen:{lbl:"Anmeldung eines Unternehmens",kurz:"UG",ico:"🏢",phase:"weitere",
+  wann:"Vor der Aufnahme des Geschäftsbetriebs. Nach §11 II BGB anmeldepflichtig, sobald Umsatz erwirtschaftet wird.",
+  an:"An die Regierung des Staates San Andreas\n– Gouverneursbüro, Wirtschaftsverwaltung –",
+  fee:"antrag",ref:"§§ 11, 12 BGB",oath:1,
+  hinweis:"§11 II BGB verlangt die Anmeldung, sobald Umsatz erwirtschaftet wird; §11 III schreibt die Schriftform vor. Der Name darf kein fremdes Namensrecht verletzen (§3 BGB).",
+  betreff:"Anmeldung des Unternehmens {firma}",
+  fields:[
+    {k:"firma",l:"Name des Unternehmens",t:"text",req:1,hint:"§3 BGB – darf kein fremdes Namensrecht verletzen"},
+    {k:"zweck",l:"Geschäftszweck",t:"area",req:1,hint:"Was das Unternehmen tut – eine bis drei Zeilen"},
+    {k:"sitz",l:"Sitz / Hausnummer",t:"text",req:1,hint:"Geschäftsräume oder Grundstück"},
+    {k:"inhaber",l:"Weitere Gründer oder Gesellschafter",t:"area",
+     hint:"eine Person je Zeile, mit Reisepassnummer – leer lassen bei Alleininhaber"},
+    {k:"start",l:"Geplanter Beginn",t:"date"},
+    {k:"marke",l:"Zugleich Eintragung des Namens als Marke beantragt",t:"check",hint:"§12 BGB"},
+    {k:"oath",l:"Eidesstattliche Versicherung abgegeben",t:"check",req:1,
+     hint:"Abnahme durch den Anwalt zulässig (§61 StPO)"}],
+  text:`namens und in Vollmacht meiner Mandantschaft {mandant}, Reisepass-Nummer {reisepass}, Telefon-Nummer {telefon}, melde ich gemäß § 11 Abs. 2 und 3 BGB die Gründung des Unternehmens {firma} an und bitte um Eintragung in das staatliche Unternehmensregister.
+
+ANGABEN ZUM UNTERNEHMEN
+
+{tabelle:firma}
+
+GESCHÄFTSZWECK
+
+{zweck}
+
+{inhaber?WEITERE GRÜNDER}
+
+{liste:inhaber}
+
+RECHTLICHE GRUNDLAGE
+
+Nach § 11 Abs. 1 BGB steht natürlichen und juristischen Personen des Privatrechts das uneingeschränkte Recht zu, ein Unternehmen zu gründen. Die Anmeldung erfolgt gemäß § 11 Abs. 2 BGB, da mit dem Geschäftsbetrieb Umsatz erwirtschaftet werden soll, und gemäß § 11 Abs. 3 BGB in Schriftform.
+
+Der gewählte Name verletzt kein bestehendes Namensrecht Dritter im Sinne des § 3 BGB.
+
+{marke?Zugleich beantrage ich nach § 12 BGB die verbindliche Eintragung des Unternehmensnamens als Marke.}
+
+{eid:die vorstehenden Angaben zutreffend sind, das Unternehmen ausschließlich legalen Zwecken dient und die Gründer ihre Pflichten nach § 11 Abs. 4 BGB – insbesondere hinsichtlich Steuern, Arbeitsrecht und Unternehmensregistrierung – einhalten werden}
+
+Ich bitte um Bestätigung der Anmeldung sowie um Mitteilung, welche weiteren Unterlagen die Wirtschaftsverwaltung benötigt.`},
+
 familie:{lbl:"Antrag auf eine Familienlizenz",kurz:"FL",ico:"👪",phase:"weitere",wann:"Familiengründung. Eidesstattliche Versicherung nimmst du selbst ab.",
   an:"An die Justiz des Staates San Andreas",fee:"familie",ref:"§7 RAVO",oath:1,
   hinweis:"Der Familienname darf keine eindeutige Assoziation mit kriminellen Aktivitäten in San Andreas haben (§7 V RAVO).",
@@ -1837,7 +1879,7 @@ Sämtliche Positionen halten die Höchstsätze der RAVO ein und sind nach § 3 A
 {privat?Ich bitte um Ausgleich der Rechnung und danke für Ihr Vertrauen.}{pflicht?Für Rückfragen zu einzelnen Positionen stehe ich zur Verfügung. Die Akte kann auf Anforderung nach § 3 Abs. 6 RAVO eingesehen werden.}`}
 };
 const TPL_STD=JSON.parse(JSON.stringify(TPL));
-const TPL_KEYS_STD=["vollmacht","akte","revision","gnade","loeschung","entschaedigung","dienstaufsicht","anzeige","einstweilig","familie","rechnung"];
+const TPL_KEYS_STD=["vollmacht","akte","revision","gnade","loeschung","entschaedigung","dienstaufsicht","anzeige","einstweilig","familie","unternehmen","rechnung"];
 /* Wofür man welchen Schriftsatz nimmt – gruppiert nach dem Zeitpunkt im Mandat */
 const PHASEN=[
   {k:"start",  lbl:"1 · Mandat annehmen und Akte sichern"},
@@ -2016,6 +2058,19 @@ function tplBlock(zeile,d,x,v){
   }
   /* Kurzer Steckbrief des Verfahrens - damit die Justiz sieht, wofuer
      abgerechnet wird, ohne die Akte danebenlegen zu muessen.            */
+  /* Kurzuebersicht der Unternehmensdaten */
+  if(m[1]==="firma"){
+    const z=[];
+    if(d.firma) z.push(["Name des Unternehmens",d.firma]);
+    if(d.sitz)  z.push(["Sitz",d.sitz]);
+    z.push(["Inhaberin oder Inhaber",(x.name||"\u2014")+(x.pass?" (Reisepass-Nummer "+x.pass+")":"")]);
+    if(x.phone) z.push(["Telefonnummer",x.phone]);
+    if(d.start) z.push(["Geplanter Beginn",dateDE(d.start)]);
+    z.push(["Anmeldung nach","\u00a7 11 Abs. 2 und 3 BGB"]);
+    if(d.marke) z.push(["Markeneintragung","zugleich beantragt (\u00a7 12 BGB)"]);
+    return '<table class="pos vorgang"><tbody>'+
+      z.map(q=>'<tr><td>'+esc(q[0])+'</td><td>'+esc(q[1])+'</td></tr>').join("")+'</tbody></table>';
+  }
   if(m[1]==="vorgang"){
     const c=x.c;
     if(!c) return "";
@@ -2348,7 +2403,7 @@ function mTplEdit(key){
         <textarea name="text" rows="14" style="font-family:Consolas,monospace;font-size:12.5px">${esc(t.text||"")}</textarea>
         <div class="hint">Leerzeile = neuer Absatz. <b>{feld}</b> setzt einen Wert ein,
         <b>{feld? Text}</b> zeigt den Text nur, wenn das Feld gefüllt ist.
-        Sonderzeilen: <b>{liste:feld}</b> nummerierte Liste, <b>{tabelle:vorgang}</b> Steckbrief des Verfahrens, <b>{tabelle:posten}</b> Rechnungstabelle,
+        Sonderzeilen: <b>{liste:feld}</b> nummerierte Liste, <b>{tabelle:vorgang}</b> Steckbrief des Verfahrens, <b>{tabelle:firma}</b> Unternehmensdaten, <b>{tabelle:posten}</b> Rechnungstabelle,
         <b>{tabelle:entschaedigung}</b> Berechnung, <b>{eid:Text}</b> eidesstattliche Versicherung.</div></label>
       <label class="f"><span>Hinweis im Formular (optional)</span><textarea name="hinweis" rows="2">${esc(t.hinweis||"")}</textarea></label>
       <div class="f-row three">
