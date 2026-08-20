@@ -242,6 +242,10 @@ tr.click{cursor:pointer}
 .doc{position:relative}
 .doc .kopfblock,.doc p,.doc h2,.doc table,.doc .schluss,.doc .fuss,.doc ol,.doc ul{position:relative;z-index:1}
 .doc .fusslogo{height:7mm;width:auto;vertical-align:-2mm;margin-right:2mm;opacity:.8}
+/* Steckbrief des Verfahrens: schmale Beschriftungsspalte, keine Kopfzeile */
+.doc table.vorgang td:first-child{width:52mm;color:#3c4756}
+.doc table.vorgang td{vertical-align:top}
+.doc table.vorgang td.r,.doc table.vorgang td:last-child{text-align:left}
 .doc .abs{font-size:9pt;color:#5a6879;border-bottom:.4pt solid #c3ccd8;padding-bottom:1.5mm;margin-bottom:6mm}
 .doc .head2{display:flex;gap:10mm;margin-bottom:9mm}
 .doc .empf{flex:1;font-size:12pt;line-height:1.5}
@@ -1802,11 +1806,13 @@ rechnung:{lbl:"Rechnung / Honorarnote",kurz:"RE",ico:"🧾",phase:"geld",wann:"Z
     {k:"konto",l:"Zahlungsweg",t:"text",hint:"z. B. Barzahlung in der Kanzlei oder Überweisung an …"}],
   text:`für meine Tätigkeit in Ihrer Angelegenheit{fall_kurz} erlaube ich mir, folgende Gebühren nach der Gebührenordnung der RAVO (§ 4) in Rechnung zu stellen.
 
+{tabelle:vorgang}
+
 {tabelle:posten}
 
 Der Gesamtbetrag ist {faellig} fällig{konto? – {konto}}.
 
-Sämtliche Positionen halten die Höchstsätze der RAVO ein. Ich bitte um Ausgleich der Rechnung und danke für Ihr Vertrauen.`}
+Sämtliche Positionen halten die Höchstsätze der RAVO ein und sind nach § 3 Abs. 5 RAVO mit Leistung, Datum und Gebühr dokumentiert. Ich bitte um Ausgleich der Rechnung und danke für Ihr Vertrauen.`}
 };
 const TPL_STD=JSON.parse(JSON.stringify(TPL));
 const TPL_KEYS_STD=["vollmacht","akte","revision","gnade","loeschung","entschaedigung","dienstaufsicht","anzeige","einstweilig","familie","rechnung"];
@@ -1974,6 +1980,32 @@ function tplBlock(zeile,d,x,v){
                 rr.per?((q.qty||1)+" × "+rr.per+" Min."):"Pauschale",money(q.amount)];})
        :[["—","keine Posten erfasst","—","—"]],
       ["","","Gesamtbetrag",money(sum)]);
+  }
+  /* Kurzer Steckbrief des Verfahrens - damit die Justiz sieht, wofuer
+     abgerechnet wird, ohne die Akte danebenlegen zu muessen.            */
+  if(m[1]==="vorgang"){
+    const c=x.c;
+    if(!c) return "";
+    const r=(c.charges||[]).length?catSum(c.charges):null;
+    const rv=revisionStatus(c);
+    const z=[];
+    z.push(["Vorgang", (c.caseNo||"\u2014")+(c.date?" vom "+dateDE(c.date):"")]);
+    if((c.charges||[]).length) z.push(["Tatvorwurf",(c.charges||[]).join("; ")]);
+    if(c.cuffAt)  z.push(["Handschellen um",c.cuffAt+" Uhr"]);
+    if(c.agency)  z.push(["Abhandelnde Beh\u00f6rde",c.agency]);
+    if((c.officers||[]).length) z.push(["Festnehmende Beamte",(c.officers||[]).join(", ")]);
+    z.push(["Staatsanwalt / Richter",c.sta||"nicht erreichbar gewesen"]);
+    z.push(["Verfahrensart",PROCEDURES[c.procedure]||"\u2014"]);
+    if(c.final&&(c.final.stars||c.final.fine))
+      z.push(["Verh\u00e4ngtes Strafma\u00df",(c.final.stars||0)+" Hafteinheiten und "+money(c.final.fine||0)]);
+    if(r&&r.hits.length)
+      z.push(["Zul\u00e4ssiges H\u00f6chstma\u00df",r.stars+" Hafteinheiten und "+money(r.fine)+" ("+STRAFREGELN[r.regel].ref+")"]);
+    z.push(["Ergebnis",outcomeInfo(c.outcome,c.procedure).lbl]);
+    if(c.revision&&c.revision.ref) z.push(["Revision",c.revision.ref+(rv.lbl?" \u2013 "+rv.lbl:"")]);
+    return '<h2 class="abschnitt">Zugrunde liegender Vorgang</h2>'+
+      '<table class="pos vorgang"><tbody>'+
+      z.map(p=>'<tr><td>'+esc(p[0])+'</td><td>'+esc(p[1])+'</td></tr>').join("")+
+      '</tbody></table>';
   }
   if(m[1]==="entschaedigung"){
     const c=x.c;
@@ -2280,7 +2312,7 @@ function mTplEdit(key){
         <textarea name="text" rows="14" style="font-family:Consolas,monospace;font-size:12.5px">${esc(t.text||"")}</textarea>
         <div class="hint">Leerzeile = neuer Absatz. <b>{feld}</b> setzt einen Wert ein,
         <b>{feld? Text}</b> zeigt den Text nur, wenn das Feld gefüllt ist.
-        Sonderzeilen: <b>{liste:feld}</b> nummerierte Liste, <b>{tabelle:posten}</b> Rechnungstabelle,
+        Sonderzeilen: <b>{liste:feld}</b> nummerierte Liste, <b>{tabelle:vorgang}</b> Steckbrief des Verfahrens, <b>{tabelle:posten}</b> Rechnungstabelle,
         <b>{tabelle:entschaedigung}</b> Berechnung, <b>{eid:Text}</b> eidesstattliche Versicherung.</div></label>
       <label class="f"><span>Hinweis im Formular (optional)</span><textarea name="hinweis" rows="2">${esc(t.hinweis||"")}</textarea></label>
       <div class="f-row three">
@@ -2526,7 +2558,7 @@ function mDoc(id,type,preset){
       <label class="f"><span>Text</span>
         <textarea id="wlText" rows="16" style="font-family:Consolas,monospace;font-size:12.5px">${esc(eigenerText)}</textarea>
         <div class="hint">Platzhalter wie <b>{mandant}</b> funktionieren weiter. Leerzeile = neuer Absatz.
-        Sonderzeilen: <b>{liste:feld}</b>, <b>{antraege}</b>, <b>{tabelle:entschaedigung}</b>, <b>{tabelle:posten}</b>.</div></label>
+        Sonderzeilen: <b>{liste:feld}</b>, <b>{antraege}</b>, <b>{tabelle:vorgang}</b>, <b>{tabelle:entschaedigung}</b>, <b>{tabelle:posten}</b>.</div></label>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <button type="button" class="btn" data-act="wlReset">↺ Wortlaut der Vorlage</button>
         <button type="button" class="btn" data-act="editTpl" data-id="${tp}">✎ Stattdessen die Vorlage ändern</button>
