@@ -1777,10 +1777,16 @@ unternehmen:{lbl:"Anmeldung eines Unternehmens",kurz:"UG",ico:"🏢",phase:"weit
   wann:"Vor der Aufnahme des Geschäftsbetriebs. Nach §11 II BGB anmeldepflichtig, sobald Umsatz erwirtschaftet wird.",
   an:"An die Regierung des Staates San Andreas\n– Gouverneursbüro, Wirtschaftsverwaltung –",
   fee:"antrag",ref:"§§ 11, 12 BGB",oath:1,
-  hinweis:"§11 II BGB verlangt die Anmeldung, sobald Umsatz erwirtschaftet wird; §11 III schreibt die Schriftform vor. Der Name darf kein fremdes Namensrecht verletzen (§3 BGB).",
-  betreff:"Anmeldung des Unternehmens {firma}",
+  hinweis:"§11 II BGB verlangt die Anmeldung, sobald Umsatz erwirtschaftet wird; §11 III schreibt die Schriftform vor. Eine Dachgesellschaft darf nach §11 I BGB eigene Töchter halten. Achtung bei Schließdiensten: Dietrich und Schlüsselsatz sind nach §32 II StGB illegal.",
+  betreff:"{anmeldeart} {firma}",
   fields:[
+    {k:"art",l:"Art der Anmeldung",t:"select",def:"Einzelunternehmen",
+      opts:["Einzelunternehmen","Dachgesellschaft mit Tochterunternehmen","Tochterunternehmen einer Dachgesellschaft"],
+      hint:"\u00a711 I BGB erlaubt die Gr\u00fcndung auch juristischen Personen – eine Dachgesellschaft darf T\u00f6chter halten"},
     {k:"firma",l:"Name des Unternehmens",t:"text",req:1,hint:"§3 BGB – darf kein fremdes Namensrecht verletzen"},
+    {k:"dach",l:"Name der Dachgesellschaft",t:"text",hint:"nur bei der Anmeldung eines Tochterunternehmens"},
+    {k:"toechter",l:"Tochterunternehmen",t:"area",
+      hint:"eine Gesellschaft je Zeile, Schema: Name – Gesch\u00e4ftszweck"},
     {k:"zweck",l:"Geschäftszweck",t:"area",req:1,hint:"Was das Unternehmen tut – eine bis drei Zeilen"},
     {k:"sitz",l:"Sitz / Hausnummer",t:"text",req:1,hint:"Geschäftsräume oder Grundstück"},
     {k:"inhaber",l:"Weitere Gründer oder Gesellschafter",t:"area",
@@ -1791,6 +1797,10 @@ unternehmen:{lbl:"Anmeldung eines Unternehmens",kurz:"UG",ico:"🏢",phase:"weit
      hint:"Abnahme durch den Anwalt zulässig (§61 StPO)"}],
   text:`namens und in Vollmacht meiner Mandantschaft {mandant}, Reisepass-Nummer {reisepass}, Telefon-Nummer {telefon}, melde ich gemäß § 11 Abs. 2 und 3 BGB die Gründung des Unternehmens {firma} an und bitte um Eintragung in das staatliche Unternehmensregister.
 
+{gruppe?Die Anmeldung umfasst die Dachgesellschaft {firma} sowie die nachstehend aufgeführten {anzahl_toechter} Tochterunternehmen, die als eigenständige Betriebe unter dem Dach dieser Gesellschaft geführt werden.}
+
+{tochter?Das Unternehmen wird als Tochterunternehmen der Dachgesellschaft {dach} geführt.}
+
 ANGABEN ZUM UNTERNEHMEN
 
 {tabelle:firma}
@@ -1798,6 +1808,10 @@ ANGABEN ZUM UNTERNEHMEN
 GESCHÄFTSZWECK
 
 {zweck}
+
+{gruppe?TOCHTERUNTERNEHMEN}
+
+{tabelle:toechter}
 
 {inhaber?WEITERE GRÜNDER}
 
@@ -1807,7 +1821,13 @@ RECHTLICHE GRUNDLAGE
 
 Nach § 11 Abs. 1 BGB steht natürlichen und juristischen Personen des Privatrechts das uneingeschränkte Recht zu, ein Unternehmen zu gründen. Die Anmeldung erfolgt gemäß § 11 Abs. 2 BGB, da mit dem Geschäftsbetrieb Umsatz erwirtschaftet werden soll, und gemäß § 11 Abs. 3 BGB in Schriftform.
 
+{gruppe?Nach § 11 Abs. 1 BGB steht das Gründungsrecht ausdrücklich auch juristischen Personen des Privatrechts zu. Die Dachgesellschaft ist daher berechtigt, die aufgeführten Tochterunternehmen zu halten und zu führen. Die Verantwortung nach § 11 Abs. 4 BGB für Steuern, Arbeitsrecht und Registrierung trifft die Dachgesellschaft für sämtliche Tochterunternehmen.}
+
 Der gewählte Name verletzt kein bestehendes Namensrecht Dritter im Sinne des § 3 BGB.
+
+{dietrich?ERKLÄRUNG ZUM WERKZEUGVERBOT}
+
+{dietrich?Der Geschäftsbetrieb umfasst Schließ- und Öffnungsdienstleistungen. Nach § 32 Abs. 2 StGB zählt ein Dietrich beziehungsweise Schlüsselsatz zu den illegalen Gegenständen; nach § 32 Abs. 4 StGB ist deren Führung allein Beamten im Dienst gestattet. Meine Mandantschaft wird die Leistungen daher ausschließlich ohne solche Werkzeuge erbringen, nämlich durch Austausch, Neuanfertigung und Instandsetzung von Schließzylindern sowie durch Arbeiten am geöffneten Objekt im Beisein der berechtigten Person. Sollte die Regierung für diesen Geschäftszweig eine abweichende Handhabung für zulässig halten, bitte ich um eine entsprechende schriftliche Genehmigung.}
 
 {marke?Zugleich beantrage ich nach § 12 BGB die verbindliche Eintragung des Unternehmensnamens als Marke.}
 
@@ -1925,6 +1945,19 @@ function tplWerte(t,d,x){
     pflicht:"", privat:"ja", rechnungsart:"Rechnung", bestellung:"",
     bis_text:d.bis?"bis zum "+dateDE(d.bis):"bis auf Widerruf"
   };
+  /* Unternehmensanmeldung: Einzelfirma, Dachgesellschaft oder Tochter */
+  if(t.fields&&t.fields.some(f=>f.k==="toechter")){
+    const art=String(d.art||"");
+    v.gruppe =/Dachgesellschaft mit/i.test(art)?"ja":"";
+    v.tochter=/Tochterunternehmen einer/i.test(art)?"ja":"";
+    v.anmeldeart=v.gruppe?"Anmeldung der Unternehmensgruppe"
+                :v.tochter?"Anmeldung des Tochterunternehmens":"Anmeldung des Unternehmens";
+    const tl=toechterListe(d);
+    v.anzahl_toechter=tl.length?String(tl.length):"";
+    /* Ein Schliessdienst beruehrt Paragraf 32 StGB - darauf geht der Antrag von selbst ein */
+    const alles=[d.firma,d.zweck,d.toechter].join(" ");
+    v.dietrich=/schl\u00fcssel|schliess|schlie\u00df|locksmith|schloss/i.test(alles)?"ja":"";
+  }
   if(t.adrFeld){
     const gewaehlt=String(d[t.adrFeld]||"");
     const istPflicht=/Justiz|Pflicht/i.test(gewaehlt);
@@ -2035,6 +2068,13 @@ function antragsKatalog(d,x){
 }
 
 /* Sonderbausteine: nummerierte Liste, Tabelle, eidesstattliche Versicherung */
+/* Zerlegt das Feld "toechter" in Name und Zweck */
+function toechterListe(d){
+  return String(d.toechter||"").split(/\n+/).map(z=>z.trim()).filter(Boolean).map(z=>{
+    const m=/^(.+?)\s*[\u2013\u2014:-]\s*(.+)$/.exec(z);
+    return m?{name:m[1].trim(),zweck:m[2].trim()}:{name:z,zweck:""};
+  });
+}
 function tplBlock(zeile,d,x,v){
   let m=/^\{liste:(\w+)\}$/.exec(zeile);
   if(m){
@@ -2058,10 +2098,20 @@ function tplBlock(zeile,d,x,v){
   }
   /* Kurzer Steckbrief des Verfahrens - damit die Justiz sieht, wofuer
      abgerechnet wird, ohne die Akte danebenlegen zu muessen.            */
+  /* Tochterunternehmen: je Zeile "Name - Zweck" */
+  if(m[1]==="toechter"){
+    if(!v||!v.gruppe) return "";          /* nur bei einer Dachgesellschaft */
+    const tl=toechterListe(d);
+    if(!tl.length) return '<p><i>Noch keine Tochterunternehmen benannt.</i></p>';
+    return '<table class="pos vorgang"><thead><tr><th>Tochterunternehmen</th><th>Gesch\u00e4ftszweck</th></tr></thead><tbody>'+
+      tl.map(q=>'<tr><td><b>'+esc(q.name)+'</b></td><td>'+esc(q.zweck||"\u2014")+'</td></tr>').join("")+'</tbody></table>';
+  }
   /* Kurzuebersicht der Unternehmensdaten */
   if(m[1]==="firma"){
     const z=[];
-    if(d.firma) z.push(["Name des Unternehmens",d.firma]);
+    if(d.firma) z.push([v.gruppe?"Dachgesellschaft":v.tochter?"Tochterunternehmen":"Name des Unternehmens",d.firma]);
+    if(v.tochter&&d.dach) z.push(["Dachgesellschaft",d.dach]);
+    if(v.gruppe) z.push(["Tochterunternehmen",toechterListe(d).length+" Gesellschaften"]);
     if(d.sitz)  z.push(["Sitz",d.sitz]);
     z.push(["Inhaberin oder Inhaber",(x.name||"\u2014")+(x.pass?" (Reisepass-Nummer "+x.pass+")":"")]);
     if(x.phone) z.push(["Telefonnummer",x.phone]);
