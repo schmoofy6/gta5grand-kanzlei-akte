@@ -1798,21 +1798,35 @@ Die Vollmacht gilt {bis_text}. Der Aussteller behält das Recht, die Vollmacht j
 
 rechnung:{lbl:"Rechnung / Honorarnote",kurz:"RE",ico:"🧾",phase:"geld",wann:"Zum Schluss. Gilt zugleich als Leistungsnachweis nach RAVO §3 V.",
   an:"",fee:"antrag",ref:"§§ 3, 4 RAVO",noFee:1,anrede:"Sehr geehrte Mandantschaft,",
+  /* Empf\u00e4nger und Anrede h\u00e4ngen davon ab, wer die Rechnung bekommt */
+  adrFeld:"adressat",
+  anMap:{"Justiz – Pflichtverteidigung":"An das Justizministerium des Staates San Andreas\n– Kostenstelle Pflichtverteidigung –"},
+  anredeMap:{"Justiz – Pflichtverteidigung":"Sehr geehrte Damen und Herren,"},
   hinweis:"Die Rechnung ist zugleich die Leistungsdokumentation nach §3 Abs. 5 RAVO. Bleibt sie unbezahlt, ist das nach §51 Abs. 2 StGB anzeigefähig.",
-  betreff:"Rechnung {aktenzeichen}{fall_kurz}",
+  betreff:"{rechnungsart} {aktenzeichen}{fall_kurz}",
   fields:[
+    {k:"adressat",l:"Rechnung geht an",t:"select",def:"Justiz – Pflichtverteidigung",
+      opts:["Justiz – Pflichtverteidigung","Mandantschaft"],
+      hint:"Bei Pflichtverteidigung rechnest du gegen\u00fcber dem Staat ab, sonst gegen\u00fcber dem Mandanten"},
+    {k:"bestelltDurch",l:"Bestellt durch",t:"text",hint:"Beamter oder Beh\u00f6rde, die dich angerufen hat – nur bei Pflichtverteidigung"},
     {k:"posten",l:"Rechnungsposten",t:"posten",req:1,hint:"Leistung, Datum und Betrag – aus dem Verfahren übernehmbar"},
     {k:"zahlbar",l:"Zahlbar bis",t:"date",hint:"leer lassen für „sofort fällig“"},
     {k:"konto",l:"Zahlungsweg",t:"text",hint:"z. B. Barzahlung in der Kanzlei oder Überweisung an …"}],
-  text:`für meine Tätigkeit in Ihrer Angelegenheit{fall_kurz} erlaube ich mir, folgende Gebühren nach der Gebührenordnung der RAVO (§ 4) in Rechnung zu stellen.
+  text:`{privat?für meine Tätigkeit in Ihrer Angelegenheit{fall_kurz} erlaube ich mir, folgende Gebühren nach der Gebührenordnung der RAVO (§ 4) in Rechnung zu stellen.}{pflicht?in der vorbezeichneten Sache war ich als Pflichtverteidiger tätig. Für die erbrachten Leistungen reiche ich die nachstehenden Gebühren nach der Gebührenordnung der RAVO (§ 4) zur Erstattung ein.}
+
+{pflicht?Die Bestellung erfolgte {bestellung}. Nach § 31 Abs. 3 StPO ist dem Beschuldigten in den Fällen der notwendigen Verteidigung ein Pflichtverteidiger von Amts wegen zu bestellen; nach § 31 Abs. 4 StPO bin ich als lizenzierter Rechtsanwalt zur Übernahme verpflichtet gewesen. Die Verteidigung beruhte damit nicht auf einem frei geschlossenen Mandat, weshalb die Gebühren gegenüber dem Staat abzurechnen sind.}
 
 {tabelle:vorgang}
 
 {tabelle:posten}
 
-Der Gesamtbetrag ist {faellig} fällig{konto? – {konto}}.
+{privat?Der Gesamtbetrag ist {faellig} fällig.}{pflicht?Ich bitte um Anweisung des Gesamtbetrages an die unterzeichnende Kanzlei.}
 
-Sämtliche Positionen halten die Höchstsätze der RAVO ein und sind nach § 3 Abs. 5 RAVO mit Leistung, Datum und Gebühr dokumentiert. Ich bitte um Ausgleich der Rechnung und danke für Ihr Vertrauen.`}
+{konto?Zahlungsweg: {konto}}
+
+Sämtliche Positionen halten die Höchstsätze der RAVO ein und sind nach § 3 Abs. 5 RAVO mit Leistung, Datum und Gebühr dokumentiert.
+
+{privat?Ich bitte um Ausgleich der Rechnung und danke für Ihr Vertrauen.}{pflicht?Für Rückfragen zu einzelnen Positionen stehe ich zur Verfügung. Die Akte kann auf Anforderung nach § 3 Abs. 6 RAVO eingesehen werden.}`}
 };
 const TPL_STD=JSON.parse(JSON.stringify(TPL));
 const TPL_KEYS_STD=["vollmacht","akte","revision","gnade","loeschung","entschaedigung","dienstaufsicht","anzeige","einstweilig","familie","rechnung"];
@@ -1857,8 +1871,19 @@ function tplWerte(t,d,x){
     entschaedigung:c.id?money(entschaedigung(c)):"",
     gebuehr:d.fee?money(d.fee):"",
     faellig:d.zahlbar?"bis zum "+dateDE(d.zahlbar):"sofort",
+    /* Pflichtverteidigung: steuert Empf\u00e4nger, Anrede und Textbausteine */
+    pflicht:"", privat:"ja", rechnungsart:"Rechnung", bestellung:"",
     bis_text:d.bis?"bis zum "+dateDE(d.bis):"bis auf Widerruf"
   };
+  if(t.adrFeld){
+    const gewaehlt=String(d[t.adrFeld]||"");
+    const istPflicht=/Justiz|Pflicht/i.test(gewaehlt);
+    v.pflicht=istPflicht?"ja":"";
+    v.privat =istPflicht?"":"ja";
+    v.rechnungsart=istPflicht?"Kostenrechnung der Pflichtverteidigung":"Rechnung";
+    v.bestellung=[d.bestelltDurch?"durch "+d.bestelltDurch:"auf Anruf der abhandelnden Beh\u00f6rde",
+                  c.date?"am "+dateDE(c.date):""].filter(Boolean).join(" ");
+  }
   (t.fields||[]).forEach(f=>{
     let val=d[f.k];
     if(f.t==="date") val=val?dateDE(val):"";
@@ -2058,8 +2083,11 @@ function docHtml(d){
   const ctx={...x,c};
   const v=tplWerte(t,d,ctx);
   const kopf=briefkopf();
-  const empf=String(d.eigenerEmpf||t.an||"").split("\n").map(z=>esc(z)).join("<br>");
-  const anrede=t.anrede!==undefined?t.anrede:"Sehr geehrte Damen und Herren,";
+  /* Vorlagen k\u00f6nnen Empf\u00e4nger und Anrede von einem Auswahlfeld abh\u00e4ngig machen */
+  const wahl=t.adrFeld?String(d[t.adrFeld]||""):"";
+  const anWahl=(t.anMap||{})[wahl], anredeWahl=(t.anredeMap||{})[wahl];
+  const empf=String(d.eigenerEmpf||anWahl||t.an||"").split("\n").map(z=>esc(z)).join("<br>");
+  const anrede=anredeWahl!==undefined?anredeWahl:(t.anrede!==undefined?t.anrede:"Sehr geehrte Damen und Herren,");
   const absender=[p.name,p.pass?"Reisepass-Nr. "+p.pass:"",p.phone?"Tel. "+p.phone:""].filter(Boolean).join(" · ");
   /* Ein für diesen Schriftsatz angepasster Text geht der Vorlage vor */
   const quelle=(typeof d.eigenerText==="string"&&d.eigenerText.trim())?d.eigenerText:t.text;
@@ -2363,7 +2391,9 @@ function mTplEdit(key){
   drawFields();
   const snap=()=>{
     const f=new FormData(form);
-    const o={lbl:f.get("lbl").trim(),kurz:(f.get("kurz")||"XX").trim().toUpperCase(),ico:(f.get("ico")||"📄").trim(),
+    /* alles, was der Editor nicht anzeigt (anMap, adrFeld, \u2026), bleibt erhalten */
+    const o={...(tplOf(key)||{}),
+      lbl:f.get("lbl").trim(),kurz:(f.get("kurz")||"XX").trim().toUpperCase(),ico:(f.get("ico")||"📄").trim(),
       an:f.get("an"),ref:f.get("ref").trim(),fee:f.get("fee"),frist:f.get("frist").trim(),
       betreff:f.get("betreff").trim(),anrede:f.get("anrede"),text:f.get("text"),hinweis:f.get("hinweis").trim(),
       caseRef:!!f.get("caseRef"),sign2:!!f.get("sign2"),datenblock:!!f.get("datenblock"),fields:felder};
