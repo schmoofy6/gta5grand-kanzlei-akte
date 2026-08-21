@@ -1327,25 +1327,27 @@ function vClients(){
       <option value="open"${k==="open"?" selected":""}>Sortierung: offene Honorare</option>
     </select></div>
   ${rows.length?`<div class="tblwrap"><table>
-    <thead><tr><th>Name</th><th>Reisepass</th><th>Telefon</th><th>Fälle</th><th>Ergebnisse</th><th>Quote</th><th>Schriftsätze</th><th>Honorar offen</th><th>Zuletzt</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Reisepass</th><th>Telefon</th><th>Fälle</th><th>Ergebnisse</th>
+      <th>Schriftsätze</th><th>Offen</th><th>Zuletzt</th><th></th></tr></thead>
     <tbody>${rows.map(({c,s})=>{
-      const last=casesOf(c.id).sort(byDateDesc)[0];
+      /* Alle Ausgänge gleich aufgebaut: Zahl und Wort. Eingereichte Verfahren
+         zählen zu den offenen – entschieden ist noch nichts.               */
+      const erg=[[s.freed,"raus","ok"],[s.reduced,"gedrückt","warn"],[s.none,"verloren","bad"],
+                 [s.laufend,"offen","neutral"]]
+        .filter(x=>x[0]).map(x=>'<span class="pill '+x[2]+'">'+x[0]+' '+x[1]+'</span>').join("");
+      const dn=docsOf(c.id).length;
+      const offen=s.open$+docStats(docsLose(c.id)).offen;
+      const dd=[...casesOf(c.id).map(x=>x.date),...docsOf(c.id).map(x=>x.date)].filter(Boolean).sort();
       return `<tr class="click" data-client="${c.id}">
         <td><b>${esc(c.name)}</b></td>
         <td class="mono">${c.pass?esc(c.pass):'<span class="muted">–</span>'}</td>
-        <td class="mono">${c.phone?esc(c.phone):'<span class="muted" title="RAVO §3 V verlangt die Telefonnummer">–</span>'}</td><td class="mono">${s.n}</td>
-        <td><div class="tags">${s.freed?'<span class="pill ok">'+s.freed+' raus</span>':""}${s.reduced?'<span class="pill warn">'+s.reduced+' gedrückt</span>':""}${s.none?'<span class="pill bad">'+s.none+'</span>':""}${s.pending?'<span class="pill warn">'+s.pending+' eingereicht</span>':""}${s.open?'<span class="pill neutral">'+s.open+' offen</span>':""}</div></td>
-        <td class="mono">${s.closed?s.rate+"%":"–"}</td>
-        <td><div class="tags">${(()=>{const q=docStats(docsOf(c.id));
-          return q.n?[q.approved?'<span class="pill ok">'+q.approved+' genehmigt</span>':"",
-                      q.rejected?'<span class="pill bad">'+q.rejected+' abgelehnt</span>':"",
-                      q.submitted?'<span class="pill warn">'+q.submitted+' eingereicht</span>':"",
-                      q.entwurf?'<span class="pill neutral">'+q.entwurf+' Entwurf</span>':""].join("")
-                   :'<span class="muted">–</span>';})()}</div></td>
-        <td class="mono ${(s.open$+docStats(docsLose(c.id)).offen)?"bad-tx":"muted"}">${(s.open$+docStats(docsLose(c.id)).offen)?money(s.open$+docStats(docsLose(c.id)).offen):"–"}</td>
-        <td class="mono">${(()=>{const dd=[...casesOf(c.id).map(x=>x.date),...docsOf(c.id).map(x=>x.date)].filter(Boolean).sort();
-          return dd.length?dateDE(dd[dd.length-1]):"–";})()}</td>
-        <td style="text-align:right"><button class="btn ghost sm" data-act="editClient" data-id="${c.id}">✎</button></td></tr>`;}).join("")}
+        <td class="mono">${c.phone?esc(c.phone):'<span class="muted" title="RAVO §3 V verlangt die Telefonnummer">–</span>'}</td>
+        <td class="mono">${s.n||'<span class="muted">–</span>'}</td>
+        <td>${erg?'<div class="tags">'+erg+'</div>':'<span class="muted">–</span>'}</td>
+        <td class="mono">${dn||'<span class="muted">–</span>'}</td>
+        <td class="mono ${offen?"bad-tx":"muted"}">${offen?money(offen):"–"}</td>
+        <td class="mono">${dd.length?dateDE(dd[dd.length-1]):'<span class="muted">–</span>'}</td>
+        <td style="text-align:right"><button class="btn ghost sm" data-act="editClient" data-id="${c.id}" title="bearbeiten">✎</button></td></tr>`;}).join("")}
     </tbody></table></div>`
   :`<div class="card empty"><div class="big">👤</div>Noch keine Mandanten.<br><button class="btn primary" style="margin-top:14px" data-act="newClient">Ersten Mandanten anlegen</button></div>`}`;
 }
@@ -3783,11 +3785,8 @@ function mClientView(id){
       ${s.open$?'<div class="box warn">Offene Honorare können nach §51 II StGB als Antragsdelikt „Erschleichen von Leistungen“ angezeigt werden – Antrag durch den Anwalt.</div>':""}
       ${c.note?'<div class="dt" style="margin-top:14px">Notizen</div><div class="dd" style="white-space:pre-wrap;margin-bottom:16px">'+esc(c.note)+'</div>':""}
       <div class="tags" style="margin:12px 0">
-        ${s.freed?'<span class="pill ok">'+s.freed+' rausgeholt</span>':""}
-        ${s.reduced?'<span class="pill warn">'+s.reduced+' gedrückt</span>':""}
-        ${s.none?'<span class="pill bad">'+s.none+' nichts erreicht</span>':""}
-        ${s.pending?'<span class="pill warn">'+s.pending+' eingereicht</span>':""}
-        ${s.open?'<span class="pill neutral">'+s.open+' laufend</span>':""}
+        ${[[s.freed,"raus","ok"],[s.reduced,"gedrückt","warn"],[s.none,"verloren","bad"],[s.laufend,"offen","neutral"]]
+          .filter(x=>x[0]).map(x=>'<span class="pill '+x[2]+'">'+x[0]+' '+x[1]+'</span>').join("")}
         ${s.errors?'<span class="pill bad">'+s.errors+'× §35 StPO</span>':""}
       </div>
       ${list.length?caseTable(list,{compact:true}):'<div class="box info">Für diese Mandantschaft ist kein Strafverfahren erfasst.</div>'}
