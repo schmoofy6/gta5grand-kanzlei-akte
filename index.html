@@ -296,7 +296,7 @@ tr.click{cursor:pointer}
   /* Ränder gehören an die Seite, nicht an das Dokument – sonst hat nur die
      erste Seite oben Rand und der Text der Folgeseiten klebt am Blattrand. */
   @page{size:A4;margin:20mm 18mm}
-  #app,#modalHost,#toastHost,#syncWrap{display:none!important}
+  #app,#modalHost,#toastHost{display:none!important}
   #printDoc{display:block!important}
   html,body{background:#fff!important;margin:0;padding:0}
   .doc{max-width:none;box-shadow:none;padding:0;margin:0;font-size:11.5pt}
@@ -344,7 +344,6 @@ tr.click{cursor:pointer}
 <div id="toastHost"></div>
 <div id="printDoc"></div>
 <!-- Datenspeicher der Online-Fassung: jede Zeile ein Datensatz. -->
-<div id="syncWrap" hidden aria-hidden="true"><ul artifact-sync id="syncList"></ul></div>
 <script>
 "use strict";
 
@@ -784,6 +783,7 @@ let DB=load(), view="dash", ui={};
 
 function migrate(d){
   d.settings=Object.assign({ravo:{}},d.settings||{});
+  delete d.settings.discord;          /* fruehere Online-Anmeldung */
   d.settings.ravo=d.settings.ravo||{};
   d.tpl=d.tpl&&typeof d.tpl==="object"?d.tpl:{};
   /* frühere Kanzlei mit mehreren Anwälten: der aktive wird zum Profil */
@@ -838,202 +838,31 @@ function load(){
   }
 }
 /* =============================================================================
-   4b) Speicher — im Browser und, wenn online, auf der Seite selbst
-   Online liegen Mandanten, Fälle, Schriftsätze, Profil, Vorlagen und Gebühren
-   auf der Seite; das gewählte Design bleibt pro Gerät.
+   4b) Speicher — alles liegt im localStorage dieses Browsers, dazu eine
+   Sicherungskopie unter einem zweiten Schlüssel. Kein Server, kein Konto.
    ============================================================================= */
-let SYNC=null;              /* Namespace der Artifact-Laufzeit, sonst null */
-let DL=null;                /* Speichern-Dialog des Viewers, sonst null    */
-let syncBusy=false;         /* eigene Schreibvorgänge nicht zurücklesen    */
-const SHARED=["clients","cases","docs"];
-const syncList=()=>document.getElementById("syncList");
-
-function readShared(){
-  const el=syncList(); if(!el) return null;
-  const out={clients:[],cases:[],docs:[],settings:null,profile:null,tpl:null};
-  let any=false;
-  [...el.children].forEach(li=>{
-    try{
-      const k=li.dataset.k, o=JSON.parse(li.textContent||"null");
-      if(!o) return;
-      if(k==="settings"){ out.settings=o; any=true; }
-      else if(k==="profile"){ out.profile=o; any=true; }
-      else if(k==="tpl"){ out.tpl=o; any=true; }
-      else if(out[k]){ out[k].push(o); any=true; }
-    }catch(e){}
-  });
-  return any?out:null;
-}
-function writeShared(){
-  const el=syncList(); if(!el||!SYNC) return;
-  syncBusy=true;
-  const want=new Map();
-  SHARED.forEach(k=>(DB[k]||[]).forEach(o=>want.set(k+":"+o.id,{k,id:o.id,o})));
-  want.set("settings:1",{k:"settings",id:"1",o:DB.settings});
-  want.set("profile:1",{k:"profile",id:"1",o:DB.profile});
-  want.set("tpl:1",{k:"tpl",id:"1",o:DB.tpl});
-  [...el.children].forEach(li=>{
-    const key=li.dataset.k+":"+li.dataset.id;
-    const w=want.get(key);
-    if(!w){ li.remove(); return; }
-    const json=JSON.stringify(w.o);
-    if(li.textContent!==json) li.textContent=json;   /* nur echte Änderungen schreiben */
-    want.delete(key);
-  });
-  want.forEach(w=>{
-    const li=document.createElement("li");
-    li.dataset.k=w.k; li.dataset.id=w.id;
-    li.textContent=JSON.stringify(w.o);
-    el.appendChild(li);
-  });
-  syncBusy=false;
-}
-/* Änderungen der Kollegen übernehmen */
-function watchShared(){
-  const el=syncList(); if(!el) return;
-  new MutationObserver(()=>{
-    if(syncBusy) return;
-    const s=readShared(); if(!s) return;
-    SHARED.forEach(k=>{ DB[k]=s[k]; });
-    if(s.settings) DB.settings=s.settings;
-    if(s.profile) DB.profile=s.profile;
-    if(s.tpl) DB.tpl=s.tpl;
-    localStorage.setItem(KEY,JSON.stringify(DB));
-    render(); setSaveState("↻ aktualisiert","var(--acc)");
-  }).observe(el,{childList:true,characterData:true,subtree:true});
-}
+let saveTimer=null;
 function setSaveState(txt,color){
   const el=document.getElementById("saveState"); if(!el) return;
   el.textContent=txt; el.style.color=color||"var(--ok)";
   clearTimeout(saveTimer);
   saveTimer=setTimeout(()=>{
-    el.textContent=SYNC?"🌐 online gespeichert":"💾 in diesem Browser gespeichert";
-    el.style.color="var(--tx3)";
+    el.textContent="💾 in diesem Browser gespeichert"; el.style.color="var(--tx3)";
   },2600);
 }
-let saveTimer=null;
 function save(){
   try{
     const prev=localStorage.getItem(KEY);
     if(prev) localStorage.setItem(BAK,prev);
     localStorage.setItem(KEY,JSON.stringify(DB));
   }catch(e){
-    if(!SYNC){ alert("Speichern fehlgeschlagen (Speicher voll?). Bitte unter „Daten“ ein Backup exportieren."); return; }
+    alert("Speichern fehlgeschlagen (Speicher voll?). Bitte unter „Daten“ ein Backup exportieren.");
+    return;
   }
-  if(SYNC) writeShared();
   setSaveState("✓ gespeichert "+new Date().toLocaleTimeString("de-DE"));
 }
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,8);}
 
-
-/* =============================================================================
-   4c) DISCORD-ANMELDUNG
-   OAuth2 im Implicit Flow: der Browser holt sich das Token direkt bei Discord,
-   es gibt keinen Server und kein Client-Secret. Gebraucht wird nur die
-   Client-ID der eigenen Discord-Anwendung. Funktioniert ausschliesslich ueber
-   http(s) - bei einer lokal geoeffneten Datei (file://) laesst Discord keine
-   Rueckleitung zu.
-   ============================================================================= */
-const DISCORD_API="https://discord.com/api";
-const dcCfg=()=>Object.assign({clientId:"",erlaubt:"",pflicht:false},(DB.settings||{}).discord);
-const dcRedirect=()=>location.origin+location.pathname;
-/* Nur dort moeglich, wo Discord zurueckleiten darf */
-const dcMoeglich=()=>/^https?:$/.test(location.protocol);
-let dcUser=null;
-
-function dcLoad(){
-  try{ const r=localStorage.getItem(KEY+".discord"); if(!r) return null;
-    const d=JSON.parse(r);
-    if(!d||!d.token||(d.expires&&Date.now()>d.expires)){ localStorage.removeItem(KEY+".discord"); return null; }
-    return d;
-  }catch(e){ return null; }
-}
-function dcStore(d){ try{ localStorage.setItem(KEY+".discord",JSON.stringify(d)); }catch(e){} }
-function dcLogout(){ dcUser=null; try{ localStorage.removeItem(KEY+".discord"); }catch(e){}
-  renderLawyerBar(); toast("Von Discord abgemeldet"); }
-
-function dcLogin(){
-  const c=dcCfg();
-  if(!c.clientId) return mDiscord();
-  if(!dcMoeglich()) return alert("Die Discord-Anmeldung braucht eine Web-Adresse (https).\n\n"+
-    "Bei einer lokal geoeffneten Datei laesst Discord die Rueckleitung nicht zu. "+
-    "Nutze die GitHub-Pages-Fassung deines Tools.");
-  const state=Math.random().toString(36).slice(2)+Date.now().toString(36);
-  try{ sessionStorage.setItem(KEY+".dcstate",state); }catch(e){}
-  location.href=DISCORD_API+"/oauth2/authorize"
-    +"?client_id="+encodeURIComponent(c.clientId)
-    +"&redirect_uri="+encodeURIComponent(dcRedirect())
-    +"&response_type=token&scope=identify&prompt=none&state="+encodeURIComponent(state);
-}
-
-/* Rueckkehr von Discord: das Token steht im Anker der URL */
-async function dcCallback(){
-  if(!location.hash||location.hash.indexOf("access_token=")<0) return false;
-  const f=new URLSearchParams(location.hash.slice(1));
-  const token=f.get("access_token"), state=f.get("state");
-  let erwartet=null; try{ erwartet=sessionStorage.getItem(KEY+".dcstate"); sessionStorage.removeItem(KEY+".dcstate"); }catch(e){}
-  history.replaceState(null,"",location.pathname+location.search);
-  if(!token) return false;
-  if(erwartet&&state!==erwartet){ toast("Anmeldung abgebrochen – Pruefwert stimmt nicht"); return false; }
-  const dauer=(+f.get("expires_in")||604800)*1000;
-  try{
-    const r=await fetch(DISCORD_API+"/users/@me",{headers:{Authorization:"Bearer "+token}});
-    if(!r.ok) throw new Error("HTTP "+r.status);
-    const u=await r.json();
-    const c=dcCfg(), liste=(c.erlaubt||"").split(/[\s,;]+/).filter(Boolean);
-    if(liste.length&&liste.indexOf(u.id)<0){
-      alert("Dieser Discord-Account ist fuer diese Kanzlei nicht freigeschaltet.\n\nDeine ID: "+u.id);
-      return false;
-    }
-    dcUser={id:u.id,name:u.global_name||u.username,tag:u.username,
-            avatar:u.avatar?"https://cdn.discordapp.com/avatars/"+u.id+"/"+u.avatar+".png?size=64":""};
-    dcStore({token,expires:Date.now()+dauer,user:dcUser});
-    if(!DB.profile.name&&dcUser.name){ DB.profile.name=dcUser.name; save(); }
-    toast("Angemeldet als "+dcUser.name);
-    return true;
-  }catch(e){ toast("Discord antwortet nicht: "+e.message); return false; }
-}
-
-/* Einstellungen */
-function mDiscord(){
-  const c=dcCfg();
-  openModal(`<form id="dcForm">
-    <div class="modal-h"><h3>Discord-Anmeldung</h3><button type="button" class="x" data-act="close">×</button></div>
-    <div class="modal-b">
-      ${dcMoeglich()?"":'<div class="box warn">Diese Datei laeuft lokal ('+esc(location.protocol)+'). '+
-        'Discord leitet nur an eine Web-Adresse zurueck – die Anmeldung funktioniert erst in der GitHub-Pages-Fassung.</div>'}
-      <div class="box info">So bekommst du die Client-ID:
-        <div style="margin-top:6px">1. <b>discord.com/developers/applications</b> öffnen und <b>New Application</b> anlegen.</div>
-        <div>2. Links auf <b>OAuth2</b>, dort die <b>Client ID</b> kopieren.</div>
-        <div>3. Unter <b>Redirects</b> genau diese Adresse eintragen und speichern:</div>
-        <div class="mono" style="margin:6px 0;padding:8px 10px;background:var(--card2);border-radius:8px;word-break:break-all">${esc(dcRedirect())}</div>
-        <div>Ein Secret wird nicht gebraucht – die Client-ID ist öffentlich.</div>
-      </div>
-      <label class="f"><span>Client-ID</span>
-        <input type="text" name="clientId" value="${esc(c.clientId)}" placeholder="z. B. 1234567890123456789" autocomplete="off"></label>
-      <label class="f"><span>Zugelassene Discord-IDs (optional)</span>
-        <textarea name="erlaubt" rows="3" placeholder="eine ID je Zeile – leer lassen heißt: jeder darf sich anmelden">${esc(c.erlaubt)}</textarea>
-        <div class="hint">Trag hier dich und deine Kollegen ein, wenn das Tool öffentlich im Netz steht.
-        Die eigene ID findest du in Discord unter Einstellungen → Erweitert → Entwicklermodus, dann Rechtsklick auf dich → ID kopieren.</div></label>
-      <label class="chk"><input type="checkbox" name="pflicht" ${c.pflicht?"checked":""}>
-        <div><div class="t">Anmeldung verlangen</div>
-        <div class="s">Ohne Anmeldung wird nur ein Hinweis angezeigt. Schützt nicht die Daten – sie liegen weiterhin
-        im Browser des Besuchers – sondern hält nur Unbefugte von der Oberfläche fern.</div></div></label>
-      <div class="box warn">Die Anmeldung sagt dir <b>wer</b> da ist. Sie legt keine Daten auf einem Server ab:
-      jeder Angemeldete arbeitet weiter in seinem eigenen Browser. Zum Austausch mit Kollegen dienen Export und Import unter <b>Daten</b>.</div>
-    </div>
-    <div class="modal-f"><button type="submit" class="btn primary">Speichern</button>
-      ${dcUser?'<button type="button" class="btn" data-act="dcLogout">Abmelden</button>':""}
-      <button type="button" class="btn ghost" data-act="close">Abbrechen</button></div></form>`,"narrow");
-  document.getElementById("dcForm").onsubmit=e=>{
-    e.preventDefault();
-    const f=new FormData(e.target);
-    DB.settings.discord={clientId:(f.get("clientId")||"").trim(),
-                         erlaubt:(f.get("erlaubt")||"").trim(),
-                         pflicht:!!f.get("pflicht")};
-    save();closeModal();renderLawyerBar();toast("Discord-Einstellungen gespeichert");
-  };
-}
 
 /* =============================================================================
    5) Helfer
@@ -1182,7 +1011,6 @@ const summe   =l=>l.reduce((a,f)=>a+(Number(f.amount)||0),0);
 const feeTotal=c=>summe(caseFees(c));
 const feeOpen =c=>summe(caseFees(c).filter(f=>!f.paid));
 /* Positionen, die über dem RAVO-Höchstbetrag liegen (§4 III: unwirksam) */
-const feeOver=c=>(c.fees||[]).filter(f=>(Number(f.amount)||0)>ravoMax(f.type,f.qty));
 
 /* --- Fehlerprüfung §35 StPO: automatisch erkannte Punkte --- */
 function autoErrors(c){
@@ -1312,7 +1140,6 @@ const NAV=[
   {id:"clients",ic:"👤", lbl:"Mandanten", cnt:()=>DB.clients.length},
   {id:"cases",  ic:"📁", lbl:"Fälle",     cnt:()=>DB.cases.length},
   {id:"antrag", ic:"📄", lbl:"Schriftsätze", cnt:()=>DB.docs.length},
-  {id:"beamte", ic:"👮", lbl:"Beamtenradar", cnt:()=>groupBy(DB.cases,"officers").length},
   {id:"fees",   ic:"💰", lbl:"Honorar",   cnt:()=>DB.cases.filter(c=>feeOpen(c)>0).length+DB.docs.filter(l=>l.fee&&!l.paid&&l.type!=="rechnung").length, alert:1},
   {id:"law",    ic:"📖", lbl:"Gesetze",   cnt:()=>CATALOG.length},
   {id:"data",   ic:"💾", lbl:"Daten"}
@@ -1320,19 +1147,11 @@ const NAV=[
 function renderLawyerBar(){
   const bar=document.getElementById("lawbar"); if(!bar) return;
   const p=me();
-  const c=dcCfg();
   bar.innerHTML=`<div class="lbl">Rechtsanwalt</div>
-    <div style="font-size:13.5px;margin:2px 0 6px;display:flex;align-items:center;gap:7px">
-      ${dcUser&&dcUser.avatar?'<img src="'+esc(dcUser.avatar)+'" alt="" width="20" height="20" style="border-radius:50%;flex:0 0 20px">':""}
-      <span>${p.name?esc(p.name):'<span class="muted">noch kein Name</span>'}</span></div>
-    ${dcUser?'<div class="hint" style="margin:0 0 6px" title="Discord-ID '+esc(dcUser.id)+'">\u2713 '+esc(dcUser.tag)+'</div>':""}
+    <div style="font-size:13.5px;margin:2px 0 6px">${p.name?esc(p.name):'<span class="muted">noch kein Name</span>'}</div>
     <div class="row">
       <button class="btn ghost sm" data-act="editProfile">✎ Profil</button>
       <button class="btn ghost sm" data-act="editRavo">⚙ Regeln</button>
-    </div>
-    <div class="row" style="margin-top:5px">
-      ${dcUser?'<button class="btn ghost sm" data-act="dcLogout">Abmelden</button>'
-              :'<button class="btn ghost sm" data-act="dcLogin">'+(c.clientId?"Mit Discord anmelden":"Discord einrichten")+'</button>'}
     </div>
     ${(!p.name||!p.pass||!p.phone)?'<div class="hint" style="color:var(--warn)">Profil unvollständig</div>':""}`;
 }
@@ -1346,7 +1165,7 @@ function renderNav(){
 function render(){
   renderNav();
   document.getElementById("main").innerHTML=
-    ({dash:vDash,clients:vClients,cases:vCases,antrag:vDocs,beamte:vBeamte,fees:vFees,law:vLaw,data:vData}[view]||vDash)();
+    ({dash:vDash,clients:vClients,cases:vCases,antrag:vDocs,fees:vFees,law:vLaw,data:vData}[view]||vDash)();
   renderLawyerBar();
 }
 const go=v=>{view=v;render();};
@@ -3119,129 +2938,6 @@ function vFees(){
    14) Ansicht: Gesetze (Katalog + Rechtsgrundlagen)
    ============================================================================= */
 
-/* =============================================================================
-   Beamtenradar - was aus deinen Faellen ueber die Exekutive hervorgeht
-   ============================================================================= */
-function beamteRadar(){
-  const g=groupBy(DB.cases,"officers").map(x=>{
-    const err=x.list.filter(c=>errCount(c)).length;
-    const dS=x.list.reduce((a,c)=>a+(c.demand?.stars||0),0);
-    const fS=x.list.reduce((a,c)=>a+(c.final?.stars||0),0);
-    const dF=x.list.reduce((a,c)=>a+(c.demand?.fine||0),0);
-    const fF=x.list.reduce((a,c)=>a+(c.final?.fine||0),0);
-    const beh=[...new Set(x.list.map(c=>c.agency).filter(Boolean))];
-    const letzte=x.list.map(c=>c.date).filter(Boolean).sort().pop()||"";
-    return {...x,err,dS,fS,dF,fF,beh,letzte};
-  });
-  const k=ui.brs||"n";
-  g.sort((a,b)=> k==="err"?(b.err/b.s.n)-(a.err/a.s.n)
-               : k==="frei"?b.s.freeRate-a.s.freeRate
-               : k==="letzte"?(b.letzte||"").localeCompare(a.letzte||"")
-               : b.s.n-a.s.n);
-  return g;
-}
-function vBeamte(){
-  const g=beamteRadar();
-  const stas=groupBy(DB.cases,"sta").sort((a,b)=>b.s.n-a.s.n);
-  const k=ui.brs||"n";
-  const sortBtn=(v,t)=>'<button data-brsort="'+v+'" class="'+(k===v?"on":"")+'">'+t+'</button>';
-  const gesErr=DB.cases.filter(c=>errCount(c)).length;
-  return `
-  <header class="top"><div><h2>Beamtenradar</h2>
-    <div class="sub">${g.length} Beamte \u00b7 ${stas.length} Staatsanw\u00e4lte \u00b7 aus ${DB.cases.length} F\u00e4llen</div></div>
-    <div class="spacer"></div></header>
-
-  ${g.length?"":'<div class="card empty">Noch keine Beamten erfasst. Trag sie beim Fall unter <b>Festnehmende Beamte</b> ein, dann entsteht hier von selbst ein Bild.</div>'}
-  ${g.length?`
-  <div class="kpis">
-    <div class="kpi"><div class="lbl">Erfasste Beamte</div><div class="val">${g.length}</div><div class="sub">${DB.cases.length} Festnahmen</div></div>
-    <div class="kpi ok"><div class="lbl">Bester Schnitt gegen</div><div class="val" style="font-size:17px">${esc([...g].sort((a,b)=>b.s.freeRate-a.s.freeRate)[0].key)}</div>
-      <div class="sub">${[...g].sort((a,b)=>b.s.freeRate-a.s.freeRate)[0].s.freeRate}% komplett raus</div></div>
-    <div class="kpi bad"><div class="lbl">Meiste Fehler</div><div class="val" style="font-size:17px">${(()=>{const x=[...g].filter(y=>y.err).sort((a,b)=>b.err/b.s.n-a.err/a.s.n)[0];return x?esc(x.key):"\u2013";})()}</div>
-      <div class="sub">${(()=>{const x=[...g].filter(y=>y.err).sort((a,b)=>b.err/b.s.n-a.err/a.s.n)[0];return x?x.err+" von "+x.s.n+" Abhandlungen":"keine Fehler erfasst";})()}</div></div>
-    <div class="kpi ${gesErr?"bad":"ok"}"><div class="lbl">Fehlerhafte Abhandlungen</div><div class="val">${gesErr}</div>
-      <div class="sub">${pct(gesErr,DB.cases.length||1)}% aller F\u00e4lle</div></div>
-  </div>
-
-  <div class="toolbar">
-    <span class="hint" style="margin:0">sortieren nach</span>
-    <div class="bookfilter">${sortBtn("n","Festnahmen")}${sortBtn("frei","Freispruchquote")}${sortBtn("err","Fehlerquote")}${sortBtn("letzte","zuletzt gesehen")}</div>
-  </div>
-
-  <div class="tblwrap"><table>
-    <thead><tr><th>Beamter</th><th>Beh\u00f6rde</th><th>Festnahmen</th><th>Ausgang</th><th>rausgeholt</th>
-      <th>Fehlerquote</th><th>fordert \u00f8</th><th>zuletzt</th></tr></thead>
-    <tbody>${g.map(x=>`<tr class="click" data-officer="${esc(x.key)}">
-      <td><b>${esc(x.key)}</b></td>
-      <td><div class="tags">${x.beh.map(b=>'<span class="pill tag">'+esc(b)+'</span>').join("")||'<span class="muted">\u2013</span>'}</div></td>
-      <td class="mono">${x.s.n}</td>
-      <td><div class="tags">${x.s.freed?'<span class="pill ok">'+x.s.freed+'</span>':""}${x.s.reduced?'<span class="pill warn">'+x.s.reduced+'</span>':""}${x.s.none?'<span class="pill bad">'+x.s.none+'</span>':""}${x.s.laufend?'<span class="pill neutral">'+x.s.laufend+'</span>':""}</div></td>
-      <td class="mono ${x.s.freeRate>=50?"ok-tx":""}">${x.s.freeRate}%</td>
-      <td class="mono ${x.err?"bad-tx":"muted"}">${x.err?x.err+"/"+x.s.n+" \u00b7 "+pct(x.err,x.s.n)+"%":"\u2013"}</td>
-      <td class="mono muted">${(x.dS/x.s.n).toFixed(1)} \u2b50 / ${money(Math.round(x.dF/x.s.n))}</td>
-      <td class="mono muted">${dateDE(x.letzte)}</td></tr>`).join("")}
-    </tbody></table></div>
-  <div class="hint">Ein Klick auf eine Zeile \u00f6ffnet die Akte des Beamten. Fehlerquote = Anteil seiner Abhandlungen,
-  in denen das Tool einen Versto\u00df nach \u00a735 StPO erkannt hat.</div>`:""}
-
-  ${stas.length?`<div class="sec-title">Staatsanw\u00e4lte und Richter</div>
-  <div class="tblwrap"><table>
-    <thead><tr><th>Name</th><th>Verfahren</th><th>Ausgang</th><th>deine Quote</th><th>dr\u00fcckt im Schnitt</th></tr></thead>
-    <tbody>${stas.map(x=>{
-      const red=x.list.filter(c=>c.outcome==="reduced");
-      const schnitt=red.length?Math.round(red.reduce((a,c)=>a+reductionPct(c),0)/red.length):0;
-      return `<tr class="click" data-sta="${esc(x.key)}">
-        <td><b>${esc(x.key)}</b></td><td class="mono">${x.s.n}</td>
-        <td><div class="tags">${x.s.freed?'<span class="pill ok">'+x.s.freed+'</span>':""}${x.s.reduced?'<span class="pill warn">'+x.s.reduced+'</span>':""}${x.s.none?'<span class="pill bad">'+x.s.none+'</span>':""}${x.s.laufend?'<span class="pill neutral">'+x.s.laufend+'</span>':""}</div></td>
-        <td class="mono ${x.s.rate>=50?"ok-tx":""}">${x.s.closed?x.s.rate+"%":"\u2013"}</td>
-        <td class="mono muted">${schnitt?"\u2212"+schnitt+"%":"\u2013"}</td></tr>`;}).join("")}
-    </tbody></table></div>`:""}`;
-}
-
-/* Akte eines Beamten oder Staatsanwalts */
-function mPerson(name,feld){
-  const list=DB.cases.filter(c=>feld==="sta"?c.sta===name:(c.officers||[]).includes(name));
-  if(!list.length) return;
-  const s=stats(list), err=list.filter(c=>errCount(c));
-  const beh=[...new Set(list.map(c=>c.agency).filter(Boolean))];
-  const partner=groupBy(list,feld==="sta"?"officers":"sta").sort((a,b)=>b.s.n-a.s.n).slice(0,5);
-  const vorw=groupBy(list,"charges").sort((a,b)=>b.s.n-a.s.n).slice(0,6);
-  /* welche Fehlerarten ihm nachgewiesen sind */
-  const arten={};
-  err.forEach(c=>Object.entries(allErrors(c)).forEach(([k,v])=>{arten[k]=(arten[k]||0)+1;}));
-  const d=(t,v)=>`<div><div class="dt">${t}</div><div class="dd">${v}</div></div>`;
-  openModal(`
-    <div class="modal-h"><h3>${esc(name)}</h3>
-      <span class="pill tag">${feld==="sta"?"Staatsanwalt / Richter":"Beamter"}</span>
-      <button type="button" class="x" data-act="close">\u00d7</button></div>
-    <div class="modal-b">
-      <div class="detail-grid">
-        ${d("Verfahren",'<span class="mono">'+s.n+'</span>')}
-        ${d("Beh\u00f6rde",beh.length?beh.map(esc).join(", "):'<span class="muted">\u2013</span>')}
-        ${d("deine Erfolgsquote",s.closed?'<span class="mono ok-tx">'+s.rate+'%</span>':'<span class="muted">\u2013</span>')}
-        ${d("komplett rausgeholt",'<span class="mono">'+s.freed+' von '+s.n+'</span>')}
-        ${d("Abhandlungsfehler",err.length?'<span class="mono bad-tx">'+err.length+' \u00b7 '+pct(err.length,s.n)+'%</span>':'<span class="muted">keine</span>')}
-        ${d("erspart",'<span class="mono ok-tx">'+s.savedS+' \u2b50 / '+money(s.savedF)+'</span>')}
-      </div>
-
-      ${Object.keys(arten).length?`<div class="box bad" style="margin-top:14px"><b>Was ihm nachgewiesen ist:</b>
-        ${Object.entries(arten).sort((a,b)=>b[1]-a[1]).map(([k,n])=>{const f=FEHLER.find(x=>x.k===k);
-          return '<div style="margin-top:5px">\u2022 '+esc(f?f.t:k)+' <span class="mono">'+n+'\u00d7</span></div>';}).join("")}
-        <div style="margin-top:8px">Bei seiner n\u00e4chsten Festnahme lohnt der Blick genau dorthin.</div></div>`:""}
-
-      ${partner.length?`<div class="sec-title">Arbeitet meist mit</div>
-        <div class="tags">${partner.map(p=>'<span class="pill tag">'+esc(p.key)+' \u00b7 '+p.s.n+'</span>').join("")}</div>`:""}
-
-      ${vorw.length?`<div class="sec-title">Wirft am h\u00e4ufigsten vor</div>
-        <div class="tags">${vorw.map(v=>{const e=catFind(v.key);
-          return '<span class="pill tag" title="'+esc(v.key)+'">'+esc(e?e.b+" "+e.p:v.key)+' \u00b7 '+v.s.n+'</span>';}).join("")}</div>`:""}
-
-      <div class="sec-title">Alle Verfahren</div>
-      ${caseTable([...list].sort(byDateDesc),{compact:true})}
-    </div>
-    <div class="modal-f"><button type="button" class="btn ghost" data-act="close">Schlie\u00dfen</button></div>`);
-}
-
 function vLaw(){
   const tab=ui.lawTab||"katalog";
   return `
@@ -3364,14 +3060,6 @@ function vData(){
   return `
   <header class="top"><div><h2>Daten</h2><div class="sub">Alles liegt lokal in diesem Browser – nichts wird hochgeladen.</div></div></header>
   <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
-    <div class="card"><h3>${SYNC?"🌐 Online gespeichert":"💾 Lokaler Betrieb"}</h3>
-      <p class="muted" style="margin-top:0">${SYNC
-        ? "Mandanten, Fälle, Schriftsätze und deine Vorlagen liegen auf dieser Seite und sind von jedem Gerät erreichbar. Gespeichert wird nach jeder Änderung."
-        : "Die Daten liegen in diesem Browser. Für ein Backup oder den Umzug dient der Export unten."}</p>
-      <div class="tags" style="margin-bottom:10px">
-        <span class="pill ${SYNC?"ok":"neutral"}">${SYNC?"verbunden":"offline"}</span>
-        ${DL?'<span class="pill ok">Datei-Export bereit</span>':""}
-      </div></div>
     <div class="card"><h3>Anwaltsdaten</h3>
       <div class="detail-grid" style="margin:0">
         <div><div class="dt">Name</div><div class="dd">${esc(p.name||"–")}</div></div>
@@ -3817,7 +3505,7 @@ function mCase(id,presetClient){
 function mCaseView(id){
   const c=DB.cases.find(x=>x.id===id); if(!c) return;
   const cl=client(c.clientId), o=outcomeInfo(c.outcome,c.procedure), sv=saved(c), red=reductionPct(c);
-  const r=catSum(c.charges), errs=allErrors(c), rv=revisionStatus(c), vj=verjaehrung(c), m=cuffMinutes(c);
+  const r=catSum(c.charges), errs=allErrors(c), rv=revisionStatus(c), vj=verjaehrung(c);
   const d=(t,v)=>'<div><div class="dt">'+t+'</div><div class="dd">'+v+'</div></div>';
   const zuHoch=r.hits.length&&((c.final?.stars||0)>r.stars||(c.final?.fine||0)>r.fine);
   openModal(`<div class="modal-h"><h3>${esc(c.caseNo||"Fall")}</h3><span class="pill ${o.cls}">${o.lbl}</span>
@@ -3881,46 +3569,12 @@ function mCaseView(id){
     </div>
     <div class="modal-f"><button class="btn primary" data-act="editCase" data-id="${c.id}">Bearbeiten</button>
       ${cl?'<button class="btn" data-act="openClient" data-id="'+cl.id+'">Mandantenakte</button>':""}
+      <button class="btn" data-act="newDocFor" data-id="${c.id}" data-tpl="akte">📂 Akteneinsicht</button>
       <button class="btn" data-act="newRevision" data-id="${c.id}">⚖️ Revisionsantrag</button>
       <button class="btn" data-act="newInvoice" data-id="${c.id}">🧾 Rechnung</button>
       <button class="btn ghost" data-act="close">Schließen</button></div>`);
 }
 
-/* Revisionsentwurf nach §41 II StPO in die Zwischenablage */
-function revisionText(c){
-  const cl=client(c.clientId)||{}, errs=allErrors(c), r=catSum(c.charges);
-  const L=[];
-  L.push("REVISIONSANTRAG");
-  L.push("Aktenzeichen: "+(c.revision?.ref||makeRef("RA",c.clientId)));
-  L.push("Datum: "+new Date().toLocaleDateString("de-DE"));
-  L.push("");
-  L.push("Antragsteller: "+(cl.name||"—")+", Reisepassnummer "+(cl.pass||"—")+", Telefon "+(cl.phone||"—"));
-  L.push("Rechtsanwalt: "+(me().name||"—")+", Telefon "+(me().phone||"—"));
-  L.push("Abhandelnde Behörde: "+(c.agency||"—")+", Beamte: "+((c.officers||[]).join(", ")||"—"));
-  L.push("Staatsanwalt/Richter: "+(c.sta||"—"));
-  L.push("Tatzeit: "+(c.date?dateDE(c.date):"—")+"   Fall: "+(c.caseNo||"—"));
-  L.push("");
-  L.push("Tatvorwürfe laut Akte:");
-  (c.charges||[]).forEach(x=>L.push("  - "+x));
-  L.push("");
-  L.push("Verhängtes Strafmaß: "+(c.final?.stars||0)+" Hafteinheiten, "+money(c.final?.fine));
-  L.push("Nach Bußgeldkatalog zulässig (§7 StGB): "+r.stars+" Hafteinheiten, "+money(r.fine));
-  L.push("");
-  L.push("Revisionsgründe (§39 i.V.m. §35 StPO):");
-  Object.entries(errs).forEach(([k,v],i)=>{
-    const f=FEHLER.find(x=>x.k===k);
-    L.push("  "+(i+1)+". "+(f?f.t:k)+" – "+(f?f.s:""));
-    if(v.txt) L.push("     "+v.txt);
-  });
-  if(!Object.keys(errs).length) L.push("  (noch keine Fehler erfasst)");
-  L.push("");
-  L.push("Antrag: Das Urteil ist aufzuheben, der Beschuldigte ist nach §35 StPO freizusprechen und freizulassen.");
-  L.push("Ferner wird Entschädigung nach §23 V StPO beantragt: "+money(entschaedigung(c))+
-         " ("+(c.final?.stars||0)+" Hafteinheiten × "+money(ENTSCHAEDIGUNG_JE_HE)+" + Geldstrafe + Anwaltskosten).");
-  L.push("");
-  L.push("Unterschrift: "+(me().name||"________________"));
-  return L.join("\n");
-}
 
 /* =============================================================================
    19) Mandant ansehen
@@ -4022,12 +3676,7 @@ function mRechner(){
    21) Import / Export
    ============================================================================= */
 /* Datei sichern – online über den Speichern-Dialog des Viewers, lokal direkt */
-async function dl(name,content,type){
-  if(DL){
-    try{ await DL.save({filename:name,data:content}); toast("Datei gespeichert"); }
-    catch(e){ if(e&&e.code!=="cancelled") toast("Speichern abgebrochen"); }
-    return;
-  }
+function dl(name,content,type){
   const b=new Blob([content],{type:type+";charset=utf-8;"}), a=document.createElement("a");
   a.href=URL.createObjectURL(b); a.download=name; a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),1500);
@@ -4257,6 +3906,11 @@ document.addEventListener("click",e=>{
       case "saveDocId": {
         const sd=DB.docs.find(x=>x.id===id); if(sd) saveDocFile(sd); return;
       }
+      case "newDocFor": {
+        const c=DB.cases.find(x=>x.id===id); if(!c) return;
+        closeModal();
+        return mDoc(null,a.dataset.tpl,{caseId:c.id,clientId:c.clientId,date:today()});
+      }
       case "newRevision": {
         const c=DB.cases.find(x=>x.id===id); if(!c) return;
         closeModal();
@@ -4270,9 +3924,6 @@ document.addEventListener("click",e=>{
       }
       case "openClient": closeModal(); return mClientView(id);
       case "editProfile": return mProfile();
-      case "dcLogin":   return dcUser?mDiscord():dcLogin();
-      case "dcLogout":  closeModal(); return dcLogout();
-      case "dcSetup":   return mDiscord();
       case "openRechner": return mRechner();
       case "newCase": ui.caseTab="fall"; return DB.clients.length?mCase():(alert("Lege zuerst einen Mandanten an."),mClient());
       case "newCaseFor": closeModal(); ui.caseTab="fall"; return mCase(null,id);
@@ -4307,9 +3958,6 @@ document.addEventListener("click",e=>{
   const cr=e.target.closest("[data-case]");
   if(cr){e.preventDefault();return mCaseView(cr.dataset.case);}
   const kr=e.target.closest("[data-client]"); if(kr) return mClientView(kr.dataset.client);
-  const of=e.target.closest("[data-officer]"); if(of) return mPerson(of.dataset.officer,"officers");
-  const st=e.target.closest("[data-sta]");     if(st) return mPerson(st.dataset.sta,"sta");
-  const bs=e.target.closest("[data-brsort]");  if(bs){ui.brs=bs.dataset.brsort;return render();}
   /* Hintergrund schließt nur, wenn der Klick auch dort begonnen hat */
   if(e.target.matches("[data-overlay]")&&zeigerStart.aufOverlay) closeModal();
 });
@@ -4356,42 +4004,11 @@ document.getElementById("themeBtn").onclick=()=>{
 window.addEventListener("beforeunload",save);
 
 /* =============================================================================
-   Start — erst zeichnen, dann prüfen, ob die Online-Ablage bereitsteht
+   Start
    ============================================================================= */
 document.documentElement.dataset.theme=DB.theme||"dark";
 render();
-
-/* Discord: gespeicherte Anmeldung aufnehmen oder Rueckleitung auswerten */
-(async()=>{
-  const d=dcLoad();
-  if(d&&d.user){ dcUser=d.user; renderLawyerBar(); }
-  if(await dcCallback()) renderLawyerBar();
-  const c=dcCfg();
-  if(c.pflicht&&!dcUser&&c.clientId&&dcMoeglich()) toast("Bitte mit Discord anmelden");
-})();
-
-(async()=>{
-  try{ if(window.claude&&claude.use){ SYNC=await claude.use("artifact"); DL=await claude.use("downloads"); } }
-  catch(e){ SYNC=null; }
-  if(!SYNC){ setSaveState("💾 in diesem Browser gespeichert","var(--tx3)"); renderLawyerBar(); return; }
-
-  const s=readShared();
-  if(s){
-    /* gespeicherten Bestand übernehmen */
-    SHARED.forEach(k=>{ DB[k]=s[k]; });
-    if(s.settings) DB.settings=s.settings;
-    if(s.profile) DB.profile=s.profile;
-    if(s.tpl) DB.tpl=s.tpl;
-    DB=migrate(DB);
-    try{ localStorage.setItem(KEY,JSON.stringify(DB)); }catch(e){}
-  }else{
-    /* noch leer: eigenen Stand hochschreiben */
-    writeShared();
-  }
-  watchShared();
-  render();
-  setSaveState("🌐 online verbunden","var(--ok)");
-})();
+setSaveState("💾 in diesem Browser gespeichert","var(--tx3)");
 </script>
 </body>
 </html>

@@ -22,7 +22,7 @@ darüber, meldet das Tool den Abhandlungsfehler nach § 35 StPO. Ausschlussparag
 Qualifikationsdelikte ohne Grundtat werden ebenfalls erkannt.
 
 **Schriftstücke**
-Elf Vorlagen, alle frei bearbeitbar, mit PDF-Export:
+Zwölf Vorlagen, alle frei bearbeitbar, mit PDF-Export:
 
 | | |
 |---|---|
@@ -35,6 +35,7 @@ Elf Vorlagen, alle frei bearbeitbar, mit PDF-Export:
 | Dienstaufsichtsbeschwerde | |
 | Strafanzeige und Strafantrag | § 16 StPO |
 | Antrag auf eine Familienlizenz | § 7 RAVO |
+| Anmeldung eines Unternehmens | §§ 11, 12 BGB, auch als Dachgesellschaft mit Töchtern |
 | Vertretungsvollmacht | § 8 BGB |
 | Rechnung / Honorarnote | RAVO §§ 3, 4 |
 
@@ -45,12 +46,14 @@ Vorlage anzufassen. Aktenzeichen nach dem Muster `A-RA-NN-YYYY-XX` (§ 41 II StP
 **Honorar nach RAVO**
 Jede Leistung wird mit Datum, Art und Betrag erfasst und gegen die Höchstsätze des § 4 II RAVO geprüft.
 Die Gebühren der Schriftstücke zählen automatisch zum jeweiligen Verfahren — nichts wird doppelt
-eingetragen. Der Nachweis der letzten 14 Tage nach § 3 VI RAVO lässt sich exportieren.
+eingetragen. Der Nachweis der letzten 14 Tage nach § 3 VI RAVO wird als fertiges PDF im Briefkopf der Kanzlei
+ausgegeben, wahlweise als Tabelle.
 
 **Fristen und Auswertung**
 Die 72-Stunden-Frist der Revision (§ 41 I StPO) und die Verjährung nach 14 Tagen (§ 19 StPO) laufen
-sichtbar mit. Die Übersicht zeigt Erfolgsquote, gesparte Hafteinheiten und Geldstrafen sowie Ranglisten
-der Staatsanwälte und der festnehmenden Beamten.
+sichtbar mit. Die Übersicht fasst Ergebnisse und Statistik auf einer Seite zusammen: Erfolgsquote,
+gesparte Hafteinheiten und Geldstrafen, die Fälle je Ausgang sowie Ranglisten der Staatsanwälte und
+der festnehmenden Beamten.
 
 **Gesetzestexte**
 229 Paragraphen aus neun Gesetzbüchern im Wortlaut — StGB, StPO, BGB, WaffG, BtMG, StVO, BDG, SVerfG,
@@ -66,9 +69,9 @@ RAVO — sortiert nach Gesetzbuch und Paragraph, damit Strg + F funktioniert.
 auswählen. Das Tool läuft dann unter `https://<benutzername>.github.io/<repository>/`.
 
 Gespeichert wird automatisch nach jeder Änderung im `localStorage` des Browsers, zusätzlich unter einem
-Sicherungsschlüssel. Es geht nichts an einen Server. Unter **Daten** lässt sich alles als JSON sichern
-und wieder einspielen — der Weg, um die Akte auf ein anderes Gerät oder in einen anderen Browser zu
-holen.
+Sicherungsschlüssel. **Es gibt keinen Server, kein Konto und keine Anmeldung** — die Daten verlassen den
+Rechner nicht. Unter **Daten** lässt sich alles als JSON sichern und wieder einspielen; das ist der Weg,
+um die Akte auf ein anderes Gerät, in einen anderen Browser oder zu einem Kollegen zu bringen.
 
 ---
 
