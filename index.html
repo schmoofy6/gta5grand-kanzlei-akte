@@ -106,6 +106,8 @@ tr.click{cursor:pointer}
 .empty .big{font-size:34px;opacity:.4;margin-bottom:8px}
 
 .pill{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:20px;font-size:12px;white-space:nowrap;font-weight:500}
+button.pill{font-family:inherit;border:0;cursor:pointer}
+button.pill:hover{filter:brightness(1.25)}
 .pill.ok{background:var(--ok-bg);color:var(--ok)}
 .pill.warn{background:var(--warn-bg);color:var(--warn)}
 .pill.bad{background:var(--bad-bg);color:var(--bad)}
@@ -261,6 +263,8 @@ html.modal-offen,html.modal-offen body{overflow:hidden}
 .prow .ps{font-size:12px;color:var(--tx2);margin-top:1px}
 .prow.on,.prow:hover{background:var(--card2)}
 .plist .empty{padding:12px;font-size:13px}
+.videobox{position:relative;padding-top:56.25%;border-radius:11px;overflow:hidden;background:#000;border:1px solid var(--line2)}
+.videobox iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 .werbe{display:flex;gap:8px;align-items:flex-start;margin-bottom:8px}
 .werbe textarea{flex:1;min-height:52px;resize:vertical}
 .werbe .row{flex:0 0 auto;flex-direction:column;gap:5px}
@@ -1327,14 +1331,9 @@ function vClients(){
       <option value="open"${k==="open"?" selected":""}>Sortierung: offene Honorare</option>
     </select></div>
   ${rows.length?`<div class="tblwrap"><table>
-    <thead><tr><th>Name</th><th>Reisepass</th><th>Telefon</th><th>Fälle</th><th>Ergebnisse</th>
+    <thead><tr><th>Name</th><th>Reisepass</th><th>Telefon</th><th>Fälle</th>
       <th>Schriftsätze</th><th>Offen</th><th>Zuletzt</th><th></th></tr></thead>
     <tbody>${rows.map(({c,s})=>{
-      /* Alle Ausgänge gleich aufgebaut: Zahl und Wort. Eingereichte Verfahren
-         zählen zu den offenen – entschieden ist noch nichts.               */
-      const erg=[[s.freed,"raus","ok"],[s.reduced,"gedrückt","warn"],[s.none,"verloren","bad"],
-                 [s.laufend,"offen","neutral"]]
-        .filter(x=>x[0]).map(x=>'<span class="pill '+x[2]+'">'+x[0]+' '+x[1]+'</span>').join("");
       const dn=docsOf(c.id).length;
       const offen=s.open$+docStats(docsLose(c.id)).offen;
       const dd=[...casesOf(c.id).map(x=>x.date),...docsOf(c.id).map(x=>x.date)].filter(Boolean).sort();
@@ -1343,7 +1342,6 @@ function vClients(){
         <td class="mono">${c.pass?esc(c.pass):'<span class="muted">–</span>'}</td>
         <td class="mono">${c.phone?esc(c.phone):'<span class="muted" title="RAVO §3 V verlangt die Telefonnummer">–</span>'}</td>
         <td class="mono">${s.n||'<span class="muted">–</span>'}</td>
-        <td>${erg?'<div class="tags">'+erg+'</div>':'<span class="muted">–</span>'}</td>
         <td class="mono">${dn||'<span class="muted">–</span>'}</td>
         <td class="mono ${offen?"bad-tx":"muted"}">${offen?money(offen):"–"}</td>
         <td class="mono">${dd.length?dateDE(dd[dd.length-1]):'<span class="muted">–</span>'}</td>
@@ -1719,7 +1717,9 @@ rechnung:{lbl:"Rechnung / Honorarnote",kurz:"RE",ico:"🧾",phase:"geld",wann:"Z
     {k:"bestelltDurch",l:"Bestellt durch",t:"text",hint:"Beamter oder Beh\u00f6rde, die dich angerufen hat – nur bei Pflichtverteidigung"},
     {k:"posten",l:"Rechnungsposten",t:"posten",req:1,hint:"Leistung, Datum und Betrag – aus dem Verfahren übernehmbar"},
     {k:"zahlbar",l:"Zahlbar bis",t:"date",hint:"leer lassen für „sofort fällig“"},
-    {k:"konto",l:"Zahlungsweg",t:"text",hint:"z. B. Barzahlung in der Kanzlei oder Überweisung an …"}],
+    {k:"konto",l:"Zahlungsweg",t:"text",hint:"z. B. Barzahlung in der Kanzlei oder Überweisung an …"},
+    {k:"video",l:"Videobeweis (Link)",t:"text",
+     hint:"YouTube, Streamable oder Medal – wird in der Vorschau abgespielt und steht als Adresse im PDF"}],
   text:`{privat?für meine Tätigkeit in Ihrer Angelegenheit{fall_kurz} erlaube ich mir, folgende Gebühren nach der Gebührenordnung der RAVO (§ 4) in Rechnung zu stellen.}{pflicht?in der vorbezeichneten Sache war ich als Pflichtverteidiger tätig. Für die erbrachten Leistungen reiche ich die nachstehenden Gebühren nach der Gebührenordnung der RAVO (§ 4) zur Erstattung ein.}
 
 {pflicht?Die Bestellung erfolgte {bestellung}. Nach § 31 Abs. 3 StPO ist dem Beschuldigten in den Fällen der notwendigen Verteidigung ein Pflichtverteidiger von Amts wegen zu bestellen; nach § 31 Abs. 4 StPO bin ich als lizenzierter Rechtsanwalt zur Übernahme verpflichtet gewesen. Die Verteidigung beruhte damit nicht auf einem frei geschlossenen Mandat, weshalb die Gebühren gegenüber dem Staat abzurechnen sind.}
@@ -1731,6 +1731,8 @@ rechnung:{lbl:"Rechnung / Honorarnote",kurz:"RE",ico:"🧾",phase:"geld",wann:"Z
 {privat?Der Gesamtbetrag ist {faellig} fällig.}{pflicht?Ich bitte um Anweisung des Gesamtbetrages an die unterzeichnende Kanzlei.}
 
 {konto?Zahlungsweg: {konto}}
+
+{video?Als Nachweis der erbrachten Leistung liegt eine Videoaufzeichnung vor, abrufbar unter: {video}}
 
 Sämtliche Positionen halten die Höchstsätze der RAVO ein und sind nach § 3 Abs. 5 RAVO mit Leistung, Datum und Gebühr dokumentiert.
 
@@ -2185,7 +2187,9 @@ function vDocs(){
         <td>${x.name?esc(x.name):'<span class="muted">–</span>'}</td>
         <td class="mono muted">${c?esc(c.caseNo||""):esc(d.familyName||d.gegner||d.beamter||d.taeter||"–")}</td>
         <td><span class="pill ${st.cls}">${st.lbl}</span></td>
-        <td class="mono">${d.fee?money(d.fee)+(d.paid?"":' <span class="pill bad">offen</span>'):'<span class="muted">–</span>'}</td>
+        <td class="mono">${d.fee?money(d.fee)+(d.paid?' <span class="pill ok">bezahlt</span>'
+          :' <button type="button" class="pill bad" data-act="docPaid" data-id="'+d.id+'" title="als bezahlt markieren">offen</button>')
+          :'<span class="muted">–</span>'}</td>
         <td>${x.ok?'<span class="pill ok">ja</span>':'<span class="pill bad">'+x.miss.length+'</span>'}${d.eigenerText?' <span class="pill tag" title="eigener Wortlaut">✎</span>':""}</td>
         <td style="text-align:right"><button class="btn ghost sm" data-act="printDoc" data-id="${d.id}" title="Als PDF drucken">🖨</button></td>
       </tr>`;}).join("")}
@@ -2472,7 +2476,9 @@ function mDoc(id,type,preset){
         <span class="muted" style="text-transform:none;letter-spacing:0;font-weight:400"> – nur für diesen Schriftsatz</span></div>
       <div id="wortlautBox"></div>
       ${t.noFee?"":'<div class="sec-title">Gebühr</div>'}
-      ${t.noFee?'<div class="hint" style="margin-top:8px">Die Gebühren dieser Rechnung ergeben sich aus den Posten oben.</div>':`
+      ${t.noFee?`<div class="sec-title">Zahlung</div>
+        <label class="chk"><input type="checkbox" name="paid" ${cur.paid?"checked":""}>
+          <div><div class="t">bezahlt</div><div class="s">Die Summe ergibt sich aus den Posten oben.</div></div></label>`:`
       <div class="f-row three" style="margin-top:10px">
         <label class="f"><span>Gebühr ($)</span>
           <div style="display:flex;gap:6px"><input type="number" name="fee" min="0" step="1000" value="${cur.fee??""}">
@@ -2689,13 +2695,33 @@ function mDocPreview(d){
   });
 }
 /* Detailansicht */
+/* Videobeweis: bekannte Anbieter werden abgespielt, alles andere verlinkt.
+   Im PDF steht ohnehin nur die Adresse.                                    */
+function videoEmbed(url){
+  const u=String(url||"").trim();
+  let m=/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{6,})/i.exec(u);
+  if(m) return "https://www.youtube-nocookie.com/embed/"+m[1];
+  m=/streamable\.com\/(?:e\/)?(\w+)/i.exec(u);
+  if(m) return "https://streamable.com/e/"+m[1];
+  m=/medal\.tv\/.*?clips\/([\w-]+)/i.exec(u);
+  if(m) return "https://medal.tv/clip/"+m[1]+"/embed";
+  return null;
+}
+function videoBox(url){
+  const u=String(url||"").trim(); if(!u) return "";
+  const e=videoEmbed(u);
+  return `<div class="sec-title">Videobeweis</div>
+    ${e?'<div class="videobox"><iframe src="'+esc(e)+'" allowfullscreen loading="lazy" referrerpolicy="no-referrer"></iframe></div>':""}
+    <div class="hint" style="margin-top:6px"><a href="${esc(u)}" target="_blank" rel="noreferrer">${esc(u)}</a>
+      ${e?"":" \u2013 dieser Anbieter l\u00e4sst sich nicht einbetten, der Link \u00f6ffnet im Browser."}</div>`;
+}
 function mDocView(id){
   const d=DB.docs.find(x=>x.id===id); if(!d) return;
   const x=docCheck(d), st=ANTRAG_STATUS[d.status]||ANTRAG_STATUS.entwurf;
   const c=d.caseId?DB.cases.find(k=>k.id===d.caseId):null;
   const dd=(t,v)=>'<div><div class="dt">'+t+'</div><div class="dd">'+v+'</div></div>';
   openModal(`<div class="modal-h"><h3>${x.t.ico} ${esc(d.no||x.t.lbl)}</h3><span class="pill ${st.cls}">${st.lbl}</span>
-      ${x.ok?'<span class="pill ok">vollständig</span>':'<span class="pill bad">'+x.miss.length+' fehlt</span>'}
+      ${x.ok?'<span class="pill ok">vollständig</span>':'<span class="pill bad">'+x.miss.length+(x.miss.length===1?' Angabe fehlt':' Angaben fehlen')+'</span>'}
       <button type="button" class="x" data-act="close">×</button></div>
     <div class="modal-b">
       <div class="detail-grid">
@@ -2703,13 +2729,14 @@ function mDocView(id){
         ${dd("Mandantschaft",x.name?"<b>"+esc(x.name)+"</b>":'<span class="muted">–</span>')}
         ${dd("Datum",dateDE(d.date))}
         ${c?dd("Verfahren",'<a href="#" data-case="'+c.id+'">'+esc(c.caseNo||"")+'</a>'):""}
-        ${dd("Gebühr",money(d.fee)+(d.fee&&!d.paid?' <span class="pill bad">offen</span>':d.fee?' <span class="pill ok">bezahlt</span>':""))}
+        ${dd("Gebühr",money(d.fee)+(d.fee?' <button type="button" class="pill '+(d.paid?"ok":"bad")+'" data-act="docPaid" data-id="'+d.id+'">'+(d.paid?"bezahlt":"offen")+'</button>':""))}
       </div>
       ${x.t.frist?'<div class="box warn"><b>Frist:</b> '+esc(x.t.frist)+'</div>':""}
       ${d.eigenerText?'<div class="box info">Dieser Schriftsatz hat einen eigenen Wortlaut; die Vorlage ist unverändert.</div>':""}
       ${x.ok?'<div class="box ok">Alle Pflichtangaben liegen vor.</div>'
             :'<div class="box bad"><b>Fehlende Pflichtangaben:</b><br>'+x.miss.map(m=>"• "+esc(m)).join("<br>")+'</div>'}
       ${d.note?'<div class="dt" style="margin-top:14px">Notizen</div><div class="dd" style="white-space:pre-wrap">'+esc(d.note)+'</div>':""}
+      ${videoBox(d.video)}
       <div class="docwrap" style="margin-top:14px">${docHtml(d)}</div>
     </div>
     <div class="modal-f">
@@ -4091,6 +4118,12 @@ document.addEventListener("click",e=>{
         return;
       case "saveDocId": {
         const sd=DB.docs.find(x=>x.id===id); if(sd) saveDocFile(sd); return;
+      }
+      case "docPaid": {
+        const dp=DB.docs.find(x=>x.id===id); if(!dp) return;
+        dp.paid=!dp.paid; save(); render();
+        if(document.querySelector(".modal")){ closeModal(); mDocView(dp.id); }
+        return toast(dp.paid?"Als bezahlt vermerkt":"Wieder als offen vermerkt");
       }
       case "newDocFor": {
         const c=DB.cases.find(x=>x.id===id); if(!c) return;
