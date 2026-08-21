@@ -241,6 +241,19 @@ tr.click{cursor:pointer}
 .doc .wz img{width:120mm;max-width:70%;opacity:.055}
 .doc{position:relative}
 .doc .kopfblock,.doc p,.doc h2,.doc table,.doc .schluss,.doc .fuss,.doc ol,.doc ul{position:relative;z-index:1}
+/* Suchbare Auswahl: Textfeld mit Trefferliste darunter */
+.picker{position:relative}
+.picker .pclear{position:absolute;right:8px;top:50%;transform:translateY(-50%);border:0;background:none;
+  color:var(--tx3);cursor:pointer;font-size:15px;padding:4px;line-height:1}
+.picker .pclear:hover{color:var(--tx)}
+.plist{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:70;max-height:238px;overflow:auto;
+  background:var(--card);border:1px solid var(--line2);border-radius:11px;box-shadow:var(--sh)}
+.prow{padding:8px 11px;cursor:pointer;border-bottom:1px solid var(--line)}
+.prow:last-child{border-bottom:0}
+.prow .pt{font-size:13.5px}
+.prow .ps{font-size:12px;color:var(--tx2);margin-top:1px}
+.prow.on,.prow:hover{background:var(--card2)}
+.plist .empty{padding:12px;font-size:13px}
 .werbe{display:flex;gap:8px;align-items:flex-start;margin-bottom:8px}
 .werbe textarea{flex:1;min-height:52px;resize:vertical}
 .werbe .row{flex:0 0 auto;flex-direction:column;gap:5px}
@@ -2439,10 +2452,7 @@ function mDoc(id,type,preset){
         </select></label>
       </div>
       <div class="sec-title" style="margin-top:2px">Mandantschaft</div>
-      <label class="f"><span>Aus der Kartei</span><select name="clientId">
-        <option value="">– nicht aus der Kartei, Daten unten eintragen –</option>
-        ${DB.clients.slice().sort((a,b)=>a.name.localeCompare(b.name,"de")).map(x=>'<option value="'+x.id+'"'+(cur.clientId===x.id?" selected":"")+'>'+esc(x.name)+(x.pass?" · "+esc(x.pass):"")+'</option>').join("")}
-      </select></label>
+      ${pickerField("clientId","Aus der Kartei",mandantenPick(),cur.clientId,"leer lassen und Daten unten eintragen")}
       <div id="extBox" ${cur.clientId?"hidden":""}><div class="f-row three">
         <label class="f"><span>Name *</span><input type="text" name="extName" value="${esc(cur.extName||"")}"></label>
         <label class="f"><span>Reisepassnummer *</span><input type="text" name="extPass" value="${esc(cur.extPass||"")}"></label>
@@ -2451,10 +2461,7 @@ function mDoc(id,type,preset){
       <div id="cliBox" ${cur.clientId?"":"hidden"} class="box info" style="margin-bottom:12px"></div>
       <label class="f"><span>Betroffenes Verfahren${t.caseRef?" *":" (optional)"}</span>
         <div style="display:flex;gap:6px">
-          <select name="caseId"><option value="">– kein Verfahren –</option>
-            ${[...DB.cases].sort(byDateDesc).map(c=>{const cl=client(c.clientId);
-              return '<option value="'+c.id+'"'+(cur.caseId===c.id?" selected":"")+'>'+esc(c.caseNo||"")+" · "+esc(cl?cl.name:"?")+" · "+dateDE(c.date)+'</option>';}).join("")}
-          </select>
+          ${pickerField("caseId","",faellePick(),cur.caseId,"Fallnummer oder Mandant …")}
           <button type="button" class="btn sm" data-act="fromCase" title="Angaben aus dem Verfahren übernehmen">⤵ übernehmen</button>
         </div></label>
       ${(t.fields||[]).length?'<div class="sec-title">Inhalt</div>':""}
@@ -2805,6 +2812,112 @@ function mProfile(){
     Object.assign(DB.profile,f,{logo});
     save();closeModal();render();toast("Anwaltsdaten gespeichert");
   };
+}
+
+
+/* =============================================================================
+   Suchbare Auswahl - ersetzt lange Klapplisten. Der Wert liegt in einem
+   versteckten Feld, damit alles Bestehende (form.clientId.value) weiterlaeuft.
+   ============================================================================= */
+const PICK={};                      /* name -> [{id,t,s}] fuer den offenen Dialog */
+function pickerField(name,label,items,selId,leerText){
+  PICK[name]=items;
+  const sel=items.find(x=>x.id===selId);
+  const kern=`<div class="picker" data-picker="${esc(name)}"${label?"":' style="flex:1"'}>
+      <input type="hidden" name="${esc(name)}" value="${esc(selId||"")}">
+      <input type="text" class="pin" autocomplete="off" spellcheck="false"
+             placeholder="${esc(leerText||"tippen zum Suchen …")}" value="${esc(sel?sel.t:"")}">
+      ${sel?'<button type="button" class="pclear" title="Auswahl aufheben">×</button>':""}
+      <div class="plist" hidden></div>
+    </div>`;
+  return label?`<label class="f"><span>${esc(label)}</span>${kern}</label>`:kern;
+}
+function pickerListe(box,q){
+  const name=box.dataset.picker, items=PICK[name]||[];
+  const s=(q||"").trim().toLowerCase();
+  const treffer=(s?items.filter(x=>(x.t+" "+(x.s||"")).toLowerCase().includes(s)):items).slice(0,40);
+  const liste=box.querySelector(".plist");
+  liste.innerHTML=treffer.length
+    ? treffer.map((x,i)=>`<div class="prow${i===0?" on":""}" data-pid="${esc(x.id)}">
+        <div class="pt">${esc(x.t)}</div>${x.s?'<div class="ps">'+esc(x.s)+'</div>':""}</div>`).join("")
+    : '<div class="empty muted">kein Treffer</div>';
+  liste.hidden=false;
+}
+function pickerWaehle(box,id){
+  const items=PICK[box.dataset.picker]||[], x=items.find(y=>y.id===id);
+  const hid=box.querySelector('input[type="hidden"]'), pin=box.querySelector(".pin");
+  hid.value=x?x.id:"";
+  pin.value=x?x.t:"";
+  box.querySelector(".plist").hidden=true;
+  const alt=box.querySelector(".pclear");
+  if(x&&!alt){ pin.insertAdjacentHTML("afterend",'<button type="button" class="pclear" title="Auswahl aufheben">×</button>'); }
+  if(!x&&alt) alt.remove();
+  hid.dispatchEvent(new Event("change",{bubbles:true}));
+}
+/* ein Satz Handler fuer alle Auswahlfelder, egal in welchem Dialog */
+document.addEventListener("input",e=>{
+  const pin=e.target.closest(".picker .pin"); if(!pin) return;
+  pickerListe(pin.closest(".picker"),pin.value);
+});
+document.addEventListener("focusin",e=>{
+  const pin=e.target.closest(".picker .pin"); if(!pin) return;
+  pin.select(); pickerListe(pin.closest(".picker"),"");
+});
+document.addEventListener("mousedown",e=>{
+  const row=e.target.closest(".prow");
+  if(row){ e.preventDefault(); return pickerWaehle(row.closest(".picker"),row.dataset.pid); }
+  const clear=e.target.closest(".pclear");
+  if(clear){ e.preventDefault(); const b=clear.closest(".picker"); pickerWaehle(b,""); b.querySelector(".pin").focus(); return; }
+  if(!e.target.closest(".picker")) document.querySelectorAll(".plist").forEach(l=>l.hidden=true);
+});
+document.addEventListener("keydown",e=>{
+  const pin=e.target.closest(".picker .pin"); if(!pin) return;
+  const box=pin.closest(".picker"), liste=box.querySelector(".plist");
+  if(e.key==="Escape"){ liste.hidden=true; return; }
+  const rows=[...liste.querySelectorAll(".prow")];
+  if(e.key==="ArrowDown"||e.key==="ArrowUp"){
+    e.preventDefault();
+    if(liste.hidden){ pickerListe(box,pin.value); return; }
+    const i=rows.findIndex(r=>r.classList.contains("on"));
+    const n=e.key==="ArrowDown"?Math.min(rows.length-1,i+1):Math.max(0,i-1);
+    rows.forEach(r=>r.classList.remove("on"));
+    if(rows[n]){ rows[n].classList.add("on"); rows[n].scrollIntoView({block:"nearest"}); }
+    return;
+  }
+  if(e.key==="Enter"){
+    const on=liste.hidden?null:liste.querySelector(".prow.on");
+    if(on){ e.preventDefault(); pickerWaehle(box,on.dataset.pid); }
+  }
+});
+/* Verlaesst man das Feld ohne Auswahl, steht wieder der gewaehlte Name drin */
+document.addEventListener("focusout",e=>{
+  const pin=e.target.closest(".picker .pin"); if(!pin) return;
+  setTimeout(()=>{
+    const box=pin.closest(".picker"); if(!box) return;
+    box.querySelector(".plist").hidden=true;
+    const id=box.querySelector('input[type="hidden"]').value;
+    const x=(PICK[box.dataset.picker]||[]).find(y=>y.id===id);
+    pin.value=x?x.t:"";
+  },120);
+});
+/* Mandanten: zuletzt bearbeitete zuerst - das trifft fast immer zu */
+function mandantenPick(){
+  const letzte=c=>{
+    const d=[...casesOf(c.id).map(x=>x.date),...docsOf(c.id).map(x=>x.date),c.created||""].filter(Boolean).sort();
+    return d.length?d[d.length-1]:"";
+  };
+  return [...DB.clients]
+    .map(c=>({c,l:letzte(c)}))
+    .sort((a,b)=>(b.l||"").localeCompare(a.l||"")||a.c.name.localeCompare(b.c.name,"de"))
+    .map(({c,l})=>({id:c.id,t:c.name,
+      s:[c.pass?"Reisepass "+c.pass:"",c.phone||"",casesOf(c.id).length?casesOf(c.id).length+" Fälle":"",
+         l?"zuletzt "+dateDE(l):""].filter(Boolean).join(" · ")}));
+}
+function faellePick(){
+  return [...DB.cases].sort(byDateDesc).map(c=>{const cl=client(c.clientId);
+    return {id:c.id,t:(c.caseNo||"ohne Nummer")+" · "+(cl?cl.name:"?"),
+      s:[dateDE(c.date),(c.charges||[]).slice(0,2).map(x=>{const e=catFind(x);return e?e.b+" "+e.p:x;}).join(", "),
+         outcomeInfo(c.outcome,c.procedure).short].filter(Boolean).join(" · ")};});
 }
 
 /* =============================================================================
@@ -3242,9 +3355,7 @@ function mCase(id,presetClient){
         <div class="f-row three">
           <label class="f"><span>Fallnummer</span><input type="text" name="caseNo" value="${esc(c?.caseNo||nextCaseNo())}"></label>
           <label class="f"><span>Datum</span><input type="date" name="date" value="${esc(c?.date||today())}"></label>
-          <label class="f"><span>Mandant *</span><select name="clientId" required><option value="">– wählen –</option>
-            ${DB.clients.slice().sort((a,b)=>a.name.localeCompare(b.name,"de")).map(x=>'<option value="'+x.id+'"'+(cid===x.id?" selected":"")+'>'+esc(x.name)+(x.pass?" · "+esc(x.pass):"")+'</option>').join("")}
-          </select></label>
+          ${pickerField("clientId","Mandant *",mandantenPick(),cid,"Name, Reisepass oder Telefon …")}
         </div>
         ${tagField("charges","Vorwürfe / Delikte",c?.charges,"dlCharges","freien Vorwurf tippen + Enter …","")}
         <div class="catbox">
@@ -3539,6 +3650,10 @@ function mCase(id,presetClient){
   form.onsubmit=e=>{
     e.preventDefault();
     const f=new FormData(form), num=k=>f.get(k)===""||f.get(k)===null?0:Number(f.get(k));
+    if(!f.get("clientId")){                       /* das versteckte Feld pruefen sich nicht selbst */
+      showPane("fall"); form.querySelector('[data-picker="clientId"] .pin').focus();
+      return toast("Bitte eine Mandantschaft wählen");
+    }
     const errors=Object.assign({},c&&c.errors);   /* frueher von Hand gesetzte Fehler bleiben erhalten */
     const obj={
       caseNo:(f.get("caseNo")||"").trim()||nextCaseNo(), date:f.get("date"), clientId:f.get("clientId"),
