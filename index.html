@@ -1178,7 +1178,7 @@ function renderLawyerBar(){
       <button class="btn ghost sm" data-act="editRavo">⚙ Regeln</button>
       <button class="btn ghost sm" data-act="werbung" title="Werbesprüche">📣</button>
     </div>
-    ${(!p.name||!p.pass||!p.phone)?'<div class="hint" style="color:var(--warn)">Profil unvollständig</div>':""}`;
+    ${(!p.name||!p.pass||!p.phone)?'<div class="hint">Profil noch unvollständig</div>':""}`;
 }
 function renderNav(){
   document.getElementById("nav").innerHTML=NAV.map(n=>{
@@ -1196,16 +1196,12 @@ function render(){
 const go=v=>{view=v;render();};
 
 /* offene Revisionsfristen über alle Fälle */
-const fristFaelle=()=>DB.cases.filter(c=>{
-  const r=revisionStatus(c);
-  return r.s==="open"&&c.outcome!=="freed"&&c.outcome!=="pending";
-}).sort((a,b)=>revisionDeadline(a)-revisionDeadline(b));
 
 /* =============================================================================
    8) Ansicht: Übersicht
    ============================================================================= */
 function vDash(){
-  const alle=DB.cases, s=stats(alle), fr=fristFaelle();
+  const alle=DB.cases, s=stats(alle);
   const fehler=alle.filter(c=>errCount(c)&&c.outcome!=="freed");
   const kpi=(cls,lbl,val,sub)=>'<div class="kpi '+cls+'"><div class="lbl">'+lbl+'</div><div class="val">'+val+'</div><div class="sub">'+sub+'</div></div>';
 
@@ -1250,11 +1246,6 @@ function vDash(){
     <button class="btn" data-act="newClient">＋ Mandant</button>
     <button class="btn primary" data-act="newCase">＋ Neuer Fall</button></header>
 
-  ${fr.length?`<div class="box warn" style="margin:0 0 16px;font-size:13px">
-    <b>⏳ Revisionsfrist läuft</b> – ${fr.length} Fall${fr.length>1?"älle":""} nach §41 I StPO noch anfechtbar:
-    ${fr.slice(0,4).map(c=>{const cl=client(c.clientId);const r=revisionStatus(c);
-      return '<div style="margin-top:5px"><a href="#" data-case="'+c.id+'">'+esc(c.caseNo)+' · '+esc(cl?cl.name:"?")+'</a> – '+r.lbl+'</div>';}).join("")}
-    </div>`:""}
   ${fehler.length?`<div class="box bad" style="margin:0 0 16px;font-size:13px">
     <b>⚠ ${fehler.length} Fall${fehler.length>1?"älle":""} mit zu hohem Strafmaß</b> – Freispruch nach §35 StPO beantragen:
     ${fehler.slice(0,4).map(c=>{const cl=client(c.clientId);
@@ -1340,8 +1331,9 @@ function vClients(){
     <tbody>${rows.map(({c,s})=>{
       const last=casesOf(c.id).sort(byDateDesc)[0];
       return `<tr class="click" data-client="${c.id}">
-        <td><b>${esc(c.name)}</b>${c.phone?"":' <span class="pill bad" title="RAVO §3 V verlangt die Telefonnummer">Tel. fehlt</span>'}</td>
-        <td class="mono">${c.pass?esc(c.pass):'<span class="bad-tx">fehlt</span>'}</td><td class="mono">${esc(c.phone||"–")}</td><td class="mono">${s.n}</td>
+        <td><b>${esc(c.name)}</b></td>
+        <td class="mono">${c.pass?esc(c.pass):'<span class="muted">–</span>'}</td>
+        <td class="mono">${c.phone?esc(c.phone):'<span class="muted" title="RAVO §3 V verlangt die Telefonnummer">–</span>'}</td><td class="mono">${s.n}</td>
         <td><div class="tags">${s.freed?'<span class="pill ok">'+s.freed+' raus</span>':""}${s.reduced?'<span class="pill warn">'+s.reduced+' gedrückt</span>':""}${s.none?'<span class="pill bad">'+s.none+'</span>':""}${s.pending?'<span class="pill warn">'+s.pending+' eingereicht</span>':""}${s.open?'<span class="pill neutral">'+s.open+' offen</span>':""}</div></td>
         <td class="mono">${s.closed?s.rate+"%":"–"}</td>
         <td><div class="tags">${(()=>{const q=docStats(docsOf(c.id));
@@ -2572,8 +2564,8 @@ function mDoc(id,type,preset){
     const s=snap(), x=docCheck(s), cl=client(s.clientId);
     form.querySelector("#extBox").hidden=!!s.clientId;
     const cb=form.querySelector("#cliBox"); cb.hidden=!s.clientId;
-    if(cl) cb.innerHTML=`Aus der Kartei: <b>${esc(cl.name)}</b> · Reisepass ${cl.pass?esc(cl.pass):'<span class="bad-tx">fehlt</span>'}
-      · Telefon ${cl.phone?esc(cl.phone):'<span class="bad-tx">fehlt</span>'}
+    if(cl) cb.innerHTML=`Aus der Kartei: <b>${esc(cl.name)}</b> · Reisepass ${cl.pass?esc(cl.pass):'<span class="muted">nicht erfasst</span>'}
+      · Telefon ${cl.phone?esc(cl.phone):'<span class="muted">nicht erfasst</span>'}
       ${(!cl.pass||!cl.phone)?'<br><a href="#" data-act="editClient" data-id="'+cl.id+'">Mandantendaten ergänzen</a>':""}`;
     form.querySelector("#docCheckBox").innerHTML=x.ok
       ? '<div class="box ok">Alle Pflichtangaben liegen vor – der Schriftsatz kann raus.</div>'
@@ -3074,12 +3066,12 @@ function vFees(){
       return `<tr class="click" data-${f.src==="doc"?"doc":"case"}="${f.srcId}">
         <td class="mono">${dateDE(f.date)}</td>
         <td>${f.client&&f.client.name?esc(f.client.name):'<span class="bad-tx">unbekannt</span>'}</td>
-        <td class="mono">${f.client&&f.client.phone?esc(f.client.phone):'<span class="bad-tx">fehlt</span>'}</td>
+        <td class="mono">${f.client&&f.client.phone?esc(f.client.phone):'<span class="muted">–</span>'}</td>
         <td>${esc(r.lbl)}${f.desc?'<div class="muted" style="font-size:12px">'+esc(f.desc)+'</div>':""}</td>
         <td class="mono">${r.per?(f.qty||1)+" × "+r.per+" Min.":"Pauschale"}</td>
         <td class="mono ${ueber?"bad-tx":""}"><b>${money(f.amount)}</b></td>
         <td class="mono muted">${money(max)}</td>
-        <td>${f.paid?'<span class="pill ok">bezahlt</span>':'<span class="pill bad">offen</span>'}${ueber?' <span class="pill bad">über RAVO</span>':""}${fehlt?' <span class="pill warn">Angabe fehlt</span>':""}</td>
+        <td>${f.paid?'<span class="pill ok">bezahlt</span>':'<span class="pill bad">offen</span>'}${ueber?' <span class="pill bad">über RAVO</span>':""}</td>
         <td class="mono muted">${esc(f.ref||"")}</td></tr>`;}).join("")}
     </tbody></table></div>`:'<div class="card empty">keine Positionen</div>';
 
@@ -3337,7 +3329,7 @@ function mClient(id){
         <label class="f"><span>Reisepassnummer *</span><input type="text" name="pass" value="${esc(c?.pass||"")}" placeholder="z. B. 123456"></label>
         <label class="f"><span>Telefonnummer *</span><input type="text" name="phone" value="${esc(c?.phone||"")}" placeholder="z. B. 11-22-333"></label>
       </div>
-      <div class="hint" style="margin:-6px 0 12px">Beides sind Pflichtangaben: die Telefonnummer nach RAVO §3 V, die Reisepassnummer für jeden Schriftsatz.</div>
+      <div class="hint" style="margin:-6px 0 12px">Telefonnummer nach RAVO §3 V, Reisepassnummer für die Schriftsätze – beides lässt sich nachtragen.</div>
       <label class="f"><span>Notizen</span><textarea name="note" placeholder="Vorgeschichte, Besonderheiten, Zahlungsmoral …">${esc(c?.note||"")}</textarea></label>
     </div>
     <div class="modal-f"><button type="submit" class="btn primary">Speichern</button>
@@ -3780,8 +3772,8 @@ function mClientView(id){
       <button type="button" class="x" data-act="close">×</button></div>
     <div class="modal-b">
       <div class="detail-grid">
-        <div><div class="dt">Reisepassnummer</div><div class="dd mono">${c.pass?esc(c.pass):'<span class="bad-tx">fehlt</span>'}</div></div>
-        <div><div class="dt">Telefon</div><div class="dd mono">${c.phone?esc(c.phone):'<span class="bad-tx">fehlt – RAVO §3 V</span>'}</div></div>
+        <div><div class="dt">Reisepassnummer</div><div class="dd mono">${c.pass?esc(c.pass):'<span class="muted">nicht erfasst</span>'}</div></div>
+        <div><div class="dt">Telefon</div><div class="dd mono">${c.phone?esc(c.phone):'<span class="muted" title="RAVO §3 V">nicht erfasst</span>'}</div></div>
         <div><div class="dt">Fälle</div><div class="dd mono">${s.n}</div></div>
         <div><div class="dt">Erfolgsquote</div><div class="dd mono ok-tx">${s.closed?s.rate+"%":"–"}</div></div>
         <div><div class="dt">Erspart</div><div class="dd mono ok-tx">${s.savedS} ⭐ · ${money(s.savedF)}</div></div>
