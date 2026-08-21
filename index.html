@@ -241,6 +241,9 @@ tr.click{cursor:pointer}
 .doc .wz img{width:120mm;max-width:70%;opacity:.055}
 .doc{position:relative}
 .doc .kopfblock,.doc p,.doc h2,.doc table,.doc .schluss,.doc .fuss,.doc ol,.doc ul{position:relative;z-index:1}
+.werbe{display:flex;gap:8px;align-items:flex-start;margin-bottom:8px}
+.werbe textarea{flex:1;min-height:52px;resize:vertical}
+.werbe .row{flex:0 0 auto;flex-direction:column;gap:5px}
 .doc .fusslogo{height:7mm;width:auto;vertical-align:-2mm;margin-right:2mm;opacity:.8}
 /* Steckbrief des Verfahrens: schmale Beschriftungsspalte, keine Kopfzeile */
 /* Leistungsnachweis: viele Zeilen, deshalb enger gesetzt */
@@ -777,11 +780,12 @@ const ANTRAG_STATUS={
 /* Leitfaden: so gehst du einen Fall von der Annahme bis zur Abrechnung durch.
    Jeder Punkt nennt die Vorschrift, aus der sich der Schritt ergibt.        */
 
-const blank={clients:[],cases:[],docs:[],profile:{name:"",phone:"",pass:"",kanzlei:"",orga:""},
+const blank={clients:[],cases:[],docs:[],werbung:[],profile:{name:"",phone:"",pass:"",kanzlei:"",orga:""},
              tpl:{},settings:{ravo:{}},theme:"dark"};
 let DB=load(), view="dash", ui={};
 
 function migrate(d){
+  if(!Array.isArray(d.werbung)) d.werbung=[];
   d.settings=Object.assign({ravo:{}},d.settings||{});
   delete d.settings.discord;          /* fruehere Online-Anmeldung */
   d.settings.ravo=d.settings.ravo||{};
@@ -1152,6 +1156,7 @@ function renderLawyerBar(){
     <div class="row">
       <button class="btn ghost sm" data-act="editProfile">✎ Profil</button>
       <button class="btn ghost sm" data-act="editRavo">⚙ Regeln</button>
+      <button class="btn ghost sm" data-act="werbung" title="Werbesprüche">📣</button>
     </div>
     ${(!p.name||!p.pass||!p.phone)?'<div class="hint" style="color:var(--warn)">Profil unvollständig</div>':""}`;
 }
@@ -2801,6 +2806,60 @@ function mProfile(){
     save();closeModal();render();toast("Anwaltsdaten gespeichert");
   };
 }
+
+/* =============================================================================
+   Werbesprueche - eigene Zeilen zum Herauskopieren, sonst ohne Funktion
+   ============================================================================= */
+function werbeWerte(){
+  const p=me();
+  return {anwalt:p.name||"", telefon:p.phone||"", reisepass:p.pass||"",
+          kanzlei:(briefkopf()[0]||p.name||""), datum:dateDE(today())};
+}
+function mWerbung(){
+  const zeichne=()=>{
+    const box=document.getElementById("werbeListe"); if(!box) return;
+    box.innerHTML=DB.werbung.length?DB.werbung.map((t,i)=>`
+      <div class="werbe" data-wi="${i}">
+        <textarea data-wtext="${i}" rows="2" placeholder="Spruch …">${esc(t)}</textarea>
+        <div class="row">
+          <button type="button" class="btn sm" data-act="wCopy" data-i="${i}">Kopieren</button>
+          <button type="button" class="btn ghost sm" data-act="wDel" data-i="${i}" title="löschen">✕</button>
+        </div>
+      </div>`).join("")
+      :'<div class="hint" style="margin:0">Noch nichts hinterlegt. Schreib deinen ersten Spruch.</div>';
+  };
+  openModal(`<div class="modal-h"><h3>📣 Werbesprüche</h3>
+      <button type="button" class="x" data-act="close">×</button></div>
+    <div class="modal-b">
+      <div id="werbeListe"></div>
+      <div class="row" style="margin-top:12px">
+        <button type="button" class="btn" data-act="wAdd">＋ Spruch</button>
+      </div>
+      <div class="hint">Platzhalter werden beim Kopieren ersetzt:
+        <b>{anwalt}</b>, <b>{telefon}</b>, <b>{reisepass}</b>, <b>{kanzlei}</b>, <b>{datum}</b>.
+        Geschrieben wird direkt in die Kartei – gespeichert wird beim Tippen.</div>
+    </div>`,"narrow");
+  zeichne();
+  const host=document.querySelector(".modal");
+  host.addEventListener("input",e=>{
+    const i=e.target.dataset.wtext;
+    if(i===undefined) return;
+    DB.werbung[+i]=e.target.value; save();       /* kein Neuzeichnen beim Tippen */
+  });
+  host.addEventListener("click",e=>{
+    const b=e.target.closest("[data-act]"); if(!b) return;
+    const i=+b.dataset.i;
+    if(b.dataset.act==="wAdd"){ DB.werbung.push(""); save(); zeichne();
+      const ta=host.querySelector('[data-wtext="'+(DB.werbung.length-1)+'"]'); if(ta) ta.focus(); return; }
+    if(b.dataset.act==="wDel"){ DB.werbung.splice(i,1); save(); zeichne(); return; }
+    if(b.dataset.act==="wCopy"){
+      const txt=fillTpl(DB.werbung[i]||"",werbeWerte()).replace(/—/g,"");
+      if(!txt.trim()) return toast("Der Spruch ist leer");
+      copyText(txt,"Spruch kopiert"); return;
+    }
+  });
+}
+
 /* =============================================================================
    Gebührenordnung anpassen (§4 IV RAVO)
    ============================================================================= */
@@ -3924,6 +3983,7 @@ document.addEventListener("click",e=>{
       }
       case "openClient": closeModal(); return mClientView(id);
       case "editProfile": return mProfile();
+      case "werbung": return mWerbung();
       case "openRechner": return mRechner();
       case "newCase": ui.caseTab="fall"; return DB.clients.length?mCase():(alert("Lege zuerst einen Mandanten an."),mClient());
       case "newCaseFor": closeModal(); ui.caseTab="fall"; return mCase(null,id);
