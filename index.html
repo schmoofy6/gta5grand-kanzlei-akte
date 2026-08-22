@@ -2309,6 +2309,7 @@ function mTplEdit(key){
       </div>
 
       <div class="sec-title">Eingabefelder</div>
+      <div id="tplStd"></div>
       <div id="tplFields"></div>
       <div class="f-row four" style="margin-top:8px">
         <label class="f"><span>Feldname (technisch)</span><input type="text" id="nfK" placeholder="z. B. grund"></label>
@@ -2333,7 +2334,17 @@ function mTplEdit(key){
       ${eigen?'<button type="button" class="btn danger" style="margin-left:auto" data-act="delTpl" data-id="'+key+'">Löschen</button>':""}
     </div></form>`);
   const form=document.getElementById("tplForm");
+  /* Wurde die Vorlage einmal angepasst, fehlen ihr sp\u00e4ter erg\u00e4nzte
+     Standardfelder \u2013 hier lassen sie sich nachziehen.                 */
+  const fehlendeStd=()=>((TPL_STD[key]||{}).fields||[]).filter(f=>!felder.some(x=>x.k===f.k));
   const drawFields=()=>{
+    const fehlt=fehlendeStd();
+    form.querySelector("#tplStd").innerHTML=fehlt.length?`<div class="box warn">
+      <b>Deiner Fassung fehlen Felder der Standardvorlage:</b>
+      ${fehlt.map(f=>'<div style="margin-top:4px">\u2022 <b>'+esc(f.l)+'</b> <span class="mono muted">{'+esc(f.k)+'}</span></div>').join("")}
+      <div style="margin-top:8px"><button type="button" class="btn sm" data-act="tplAddStd">Felder \u00fcbernehmen</button>
+        <span class="muted" style="font-size:12px">\u2013 den passenden Textbaustein musst du unten selbst einf\u00fcgen</span></div>
+    </div>`:"";
     form.querySelector("#tplFields").innerHTML=felder.length?`<div class="tblwrap"><table>
       <thead><tr><th>Platzhalter</th><th>Beschriftung</th><th>Art</th><th>Pflicht</th><th></th></tr></thead>
       <tbody>${felder.map((f,i)=>`<tr>
@@ -2360,6 +2371,13 @@ function mTplEdit(key){
     if(fr){const i=+fr.dataset.freq;felder[i].req=felder[i].req?0:1;return drawFields();}
     const fd=e.target.closest("[data-fdel]"); if(fd){felder.splice(+fd.dataset.fdel,1);return drawFields();}
     const a=e.target.closest("[data-act]"); if(!a) return;
+    if(a.dataset.act==="tplAddStd"){
+      e.preventDefault();
+      const neu=fehlendeStd();
+      felder=felder.concat(JSON.parse(JSON.stringify(neu)));
+      drawFields();
+      return toast(neu.length+(neu.length===1?" Feld":" Felder")+" \u00fcbernommen \u2013 noch speichern");
+    }
     if(a.dataset.act==="tplAddField"){
       e.preventDefault();
       const k=form.querySelector("#nfK").value.trim().replace(/[^\w]/g,""),
