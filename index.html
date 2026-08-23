@@ -14,7 +14,10 @@
   --warn:#f5b544; --warn-bg:rgba(245,181,68,.13);
   --bad:#ff5f6b; --bad-bg:rgba(255,95,107,.13);
   --neutral:#7d8da1; --neutral-bg:rgba(125,141,161,.13);
-  --r:12px; --sh:0 4px 20px rgba(0,0,0,.35);
+  --r:12px; --r-sm:9px; --r-lg:16px;
+  --sh:0 4px 20px rgba(0,0,0,.35); --sh-sm:0 1px 3px rgba(0,0,0,.25);
+  --ring:0 0 0 3px rgba(76,141,255,.28);
+  --tempo:.13s cubic-bezier(.4,0,.2,1);
 }
 html[data-theme="light"]{
   --bg:#f2f5f9; --bg2:#e9eef5; --card:#fff; --card2:#f6f8fb;
@@ -25,26 +28,35 @@ html[data-theme="light"]{
   --warn:#b57c07; --warn-bg:rgba(181,124,7,.12);
   --bad:#d92c3c; --bad-bg:rgba(217,44,60,.1);
   --neutral:#66768a; --neutral-bg:rgba(102,118,138,.12);
-  --sh:0 4px 18px rgba(20,40,80,.08);
+  --sh:0 4px 18px rgba(20,40,80,.08); --sh-sm:0 1px 2px rgba(20,40,80,.06);
+  --ring:0 0 0 3px rgba(47,111,224,.2);
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.5 "Segoe UI",system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.55 "Segoe UI",system-ui,-apple-system,sans-serif;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
 button,input,select,textarea{font:inherit;color:inherit}
-a{color:var(--acc)}
+button{transition:background var(--tempo),border-color var(--tempo),color var(--tempo)}
+a{color:var(--acc);text-decoration-color:transparent;text-underline-offset:2px;transition:text-decoration-color var(--tempo)}
+a:hover{text-decoration-color:currentColor}
+::selection{background:var(--acc-dim);color:var(--tx)}
+:focus-visible{outline:0;box-shadow:var(--ring);border-radius:var(--r-sm)}
 ::-webkit-scrollbar{width:10px;height:10px}
-::-webkit-scrollbar-thumb{background:var(--line2);border-radius:8px}
+::-webkit-scrollbar-thumb{background:var(--line2);border-radius:8px;border:2px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:var(--tx3);background-clip:content-box}
+::-webkit-scrollbar-track{background:transparent}
 
 #app{display:flex;min-height:100vh}
 #side{width:232px;flex:0 0 232px;background:var(--bg2);border-right:1px solid var(--line);
   display:flex;flex-direction:column;position:sticky;top:0;height:100vh;z-index:20}
-.brand{padding:18px 18px 13px;border-bottom:1px solid var(--line)}
-.brand h1{margin:0;font-size:16px}
+.brand{padding:19px 18px 15px;border-bottom:1px solid var(--line)}
+.brand h1{margin:0;font-size:16px;letter-spacing:-.2px}
 .brand span{display:block;font-size:11px;color:var(--tx3);margin-top:3px;letter-spacing:.6px;text-transform:uppercase}
 nav{padding:10px;flex:1;overflow:auto}
 nav button{display:flex;align-items:center;gap:10px;width:100%;background:none;border:0;padding:9px 12px;
-  border-radius:9px;color:var(--tx2);cursor:pointer;text-align:left;margin-bottom:2px}
+  border-radius:var(--r-sm);color:var(--tx2);cursor:pointer;text-align:left;margin-bottom:2px;position:relative}
 nav button:hover{background:var(--card);color:var(--tx)}
-nav button.on{background:var(--acc-dim);color:var(--tx)}
+nav button.on{background:var(--acc-dim);color:var(--tx);font-weight:500}
+nav button.on::before{content:"";position:absolute;left:0;top:9px;bottom:9px;width:3px;border-radius:0 3px 3px 0;background:var(--acc)}
 nav button .ic{width:18px;text-align:center}
 nav button .cnt{margin-left:auto;font-size:11px;color:var(--tx3);background:var(--card2);padding:1px 7px;border-radius:20px}
 nav button .cnt.alert{background:var(--bad);color:#fff}
@@ -54,58 +66,65 @@ nav button .cnt.alert{background:var(--bad);color:#fff}
 .lawbar .lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--tx3)}
 .side-foot{padding:11px;border-top:1px solid var(--line);font-size:11px;color:var(--tx3)}
 .side-foot .row{display:flex;align-items:center;gap:8px;justify-content:space-between}
-main{flex:1;min-width:0;padding:22px 26px 60px}
+main{flex:1;min-width:0;padding:24px 28px 64px}
 header.top{display:flex;align-items:center;gap:14px;margin-bottom:20px;flex-wrap:wrap}
-header.top h2{margin:0;font-size:22px;font-weight:600}
+header.top h2{margin:0;font-size:22px;font-weight:600;letter-spacing:-.3px}
 header.top .sub{color:var(--tx3);font-size:13px}
 .spacer{flex:1}
 
-.btn{background:var(--card2);border:1px solid var(--line2);color:var(--tx);padding:8px 14px;border-radius:9px;cursor:pointer;
-  display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
-.btn:hover{border-color:var(--acc)}
+.btn{background:var(--card2);border:1px solid var(--line2);color:var(--tx);padding:8px 14px;border-radius:var(--r-sm);cursor:pointer;
+  display:inline-flex;align-items:center;gap:7px;white-space:nowrap;box-shadow:var(--sh-sm)}
+.btn:hover{border-color:var(--acc);background:var(--card)}
+.btn:active{transform:translateY(1px)}
 .btn.primary{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:500}
-.btn.primary:hover{filter:brightness(1.1)}
+.btn.primary:hover{filter:brightness(1.08);background:var(--acc)}
 .btn.ghost{background:transparent;border-color:transparent;color:var(--tx2)}
 .btn.ghost:hover{background:var(--card2);color:var(--tx)}
 .btn.danger{color:var(--bad)}
 .btn.danger:hover{border-color:var(--bad);background:var(--bad-bg)}
 .btn.sm{padding:5px 10px;font-size:12.5px;border-radius:7px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px}
-.card h3{margin:0 0 14px;font-weight:600;color:var(--tx2);letter-spacing:.3px;text-transform:uppercase;font-size:11.5px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px;box-shadow:var(--sh-sm)}
+.card h3{margin:0 0 14px;font-weight:600;color:var(--tx2);letter-spacing:.4px;text-transform:uppercase;font-size:11px}
 .grid{display:grid;gap:14px}
 .muted{color:var(--tx3)}
 .mono{font-variant-numeric:tabular-nums}
 .ok-tx{color:var(--ok)} .bad-tx{color:var(--bad)} .warn-tx{color:var(--warn)}
 
 input[type=text],input[type=number],input[type=date],input[type=time],input[type=search],select,textarea{
-  width:100%;background:var(--bg);border:1px solid var(--line2);border-radius:8px;padding:8px 11px;outline:0}
-input:focus,select:focus,textarea:focus{border-color:var(--acc)}
+  width:100%;background:var(--bg);border:1px solid var(--line2);border-radius:var(--r-sm);padding:8px 11px;outline:0;
+  transition:border-color var(--tempo),box-shadow var(--tempo)}
+input:hover,select:hover,textarea:hover{border-color:var(--tx3)}
+input:focus,select:focus,textarea:focus{border-color:var(--acc);box-shadow:var(--ring)}
+::placeholder{color:var(--tx3);opacity:1}
 textarea{resize:vertical;min-height:66px}
 label.f{display:block;margin-bottom:12px}
-label.f > span{display:block;font-size:12px;color:var(--tx2);margin-bottom:5px}
+label.f > span{display:block;font-size:12px;color:var(--tx2);margin-bottom:5px;font-weight:500}
 .f-row{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
 .f-row.three{grid-template-columns:1fr 1fr 1fr}
 .f-row.four{grid-template-columns:1fr 1fr 1fr 1fr}
 
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(163px,1fr));gap:14px;margin-bottom:18px}
-.kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:15px 16px}
-.kpi .lbl{font-size:11.5px;color:var(--tx3);text-transform:uppercase;letter-spacing:.5px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:15px 16px;box-shadow:var(--sh-sm)}
+.kpi .lbl{font-size:11px;color:var(--tx3);text-transform:uppercase;letter-spacing:.6px;font-weight:600}
 .kpi .val{font-size:26px;font-weight:600;margin-top:6px;line-height:1.1}
 .kpi .sub{font-size:12px;color:var(--tx3);margin-top:4px}
 .kpi.ok .val{color:var(--ok)} .kpi.warn .val{color:var(--warn)} .kpi.bad .val{color:var(--bad)} .kpi.acc .val{color:var(--acc)}
 
-.tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--card)}
+.tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--card);box-shadow:var(--sh-sm)}
 table{width:100%;border-collapse:collapse;font-size:13.5px}
-th{background:var(--card2);text-align:left;padding:10px 13px;font-size:11.5px;letter-spacing:.4px;text-transform:uppercase;
-  color:var(--tx3);border-bottom:1px solid var(--line);white-space:nowrap}
-td{padding:10px 13px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{background:var(--card2);text-align:left;padding:9px 14px;font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;
+  color:var(--tx3);border-bottom:1px solid var(--line);white-space:nowrap;font-weight:600}
+td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
 tbody tr:last-child td{border-bottom:0}
+tbody tr{transition:background var(--tempo)}
 tbody tr:hover{background:var(--card2)}
+tr.click:active{background:var(--acc-dim)}
 tr.click{cursor:pointer}
-.empty{padding:40px 20px;text-align:center;color:var(--tx3)}
+.empty{padding:44px 20px;text-align:center;color:var(--tx3);line-height:1.7}
 .empty .big{font-size:34px;opacity:.4;margin-bottom:8px}
 
-.pill{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:20px;font-size:12px;white-space:nowrap;font-weight:500}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:2.5px 10px;border-radius:20px;font-size:11.5px;
+  white-space:nowrap;font-weight:600;letter-spacing:.1px}
 button.pill{font-family:inherit;border:0;cursor:pointer}
 button.pill:hover{filter:brightness(1.25)}
 .pill.ok{background:var(--ok-bg);color:var(--ok)}
@@ -134,7 +153,7 @@ button.pill:hover{filter:brightness(1.25)}
 .chart-x{display:flex;gap:6px;margin-top:6px}
 .chart-x span{flex:1;text-align:center;font-size:10px;color:var(--tx3);min-width:14px}
 
-.overlay{position:fixed;inset:0;background:rgba(3,6,12,.65);backdrop-filter:blur(3px);z-index:50;
+.overlay{position:fixed;inset:0;background:rgba(3,6,12,.6);backdrop-filter:blur(4px);z-index:50;animation:einblenden .14s ease-out;
   display:flex;align-items:flex-start;justify-content:center;padding:34px 16px;overflow:auto}
 /* Kopf und Fuss stehen fest, nur der Rumpf scrollt - das vermeidet klebende
    Leisten, die beim Scrollen ineinanderlaufen. */
@@ -143,9 +162,13 @@ button.pill:hover{filter:brightness(1.25)}
 /* Viele Dialoge sind ein <form> - das muss die Aufteilung mitmachen */
 .modal>form{display:flex;flex-direction:column;min-height:0;flex:1 1 auto}
 .modal.narrow{max-width:540px}
+@keyframes einblenden{from{opacity:0}to{opacity:1}}
+@keyframes aufsteigen{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.modal{animation:aufsteigen .16s cubic-bezier(.4,0,.2,1)}
+@media(prefers-reduced-motion:reduce){.overlay,.modal{animation:none}}
 .modal-h{display:flex;align-items:center;gap:10px;padding:15px 20px;border-bottom:1px solid var(--line);
   background:var(--card);border-radius:16px 16px 0 0;flex:0 0 auto}
-.modal-h h3{margin:0;font-size:16px;text-transform:none;letter-spacing:0;color:var(--tx)}
+.modal-h h3{margin:0;font-size:15.5px;font-weight:600;text-transform:none;letter-spacing:-.1px;color:var(--tx)}
 .modal-b{padding:20px;overflow:auto;flex:1 1 auto;min-height:0}
 .modal-f{display:flex;gap:10px;padding:13px 20px;border-top:1px solid var(--line);background:var(--card2);
   border-radius:0 0 16px 16px;flex-wrap:wrap;flex:0 0 auto}
@@ -166,7 +189,7 @@ html.modal-offen,html.modal-offen body{overflow:hidden}
   border-radius:20px;padding:2px 4px 2px 10px;font-size:12.5px}
 .taginput .chip button{background:none;border:0;color:var(--tx3);cursor:pointer;padding:0 4px;font-size:14px;line-height:1}
 .taginput .chip button:hover{color:var(--bad)}
-.hint{font-size:11.5px;color:var(--tx3);margin-top:4px}
+.hint{font-size:11.5px;color:var(--tx3);margin-top:5px;line-height:1.5}
 
 .seg-ctl{display:flex;gap:6px;flex-wrap:wrap}
 .seg-ctl button{flex:1;min-width:110px;background:var(--bg);border:1px solid var(--line2);padding:9px;border-radius:9px;cursor:pointer;color:var(--tx2);font-size:13px}
@@ -182,8 +205,11 @@ html.modal-offen,html.modal-offen body{overflow:hidden}
 .dt{font-size:11.5px;color:var(--tx3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px}
 .dd{font-size:14px}
 .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--line2);
-  padding:11px 18px;border-radius:10px;box-shadow:var(--sh);z-index:99;font-size:13.5px}
-.sec-title{font-size:11.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--tx3);margin:22px 0 10px;font-weight:600}
+  padding:11px 18px;border-radius:var(--r-sm);box-shadow:var(--sh);z-index:99;font-size:13.5px;
+  animation:aufsteigen .18s cubic-bezier(.4,0,.2,1)}
+.sec-title{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--tx3);margin:24px 0 11px;font-weight:600;
+  display:flex;align-items:center;gap:10px}
+.sec-title::after{content:"";flex:1;height:1px;background:var(--line)}
 
 .catbox{border:1px solid var(--line2);border-radius:10px;overflow:hidden;margin-bottom:12px}
 .catbox .head{display:flex;gap:8px;padding:8px;background:var(--card2);flex-wrap:wrap;align-items:center}
@@ -199,16 +225,17 @@ html.modal-offen,html.modal-offen body{overflow:hidden}
 .bookfilter button{background:var(--bg);border:1px solid var(--line2);border-radius:7px;padding:5px 10px;font-size:12.5px;cursor:pointer;color:var(--tx2)}
 .bookfilter button.on{background:var(--acc);border-color:var(--acc);color:#fff}
 
-.calc{background:var(--card2);border:1px solid var(--line2);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px}
+.calc{background:var(--card2);border:1px solid var(--line2);border-radius:var(--r-sm);padding:13px 15px;margin-bottom:14px;font-size:13px}
 .calc .line{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-.box{border-radius:9px;padding:9px 12px;margin-top:9px;font-size:12.5px;line-height:1.5}
+.box{border-radius:var(--r-sm);padding:10px 13px;margin-top:9px;font-size:12.5px;line-height:1.55}
 .box.bad{background:var(--bad-bg);border:1px solid var(--bad);color:var(--bad)}
 .box.warn{background:var(--warn-bg);border:1px solid var(--warn);color:var(--warn)}
 .box.ok{background:var(--ok-bg);border:1px solid var(--ok);color:var(--ok)}
 .box.info{background:var(--card);border:1px solid var(--line2);color:var(--tx2)}
 .stars{color:var(--warn);letter-spacing:1px}
 
-.chk{display:flex;gap:10px;align-items:flex-start;padding:9px 11px;border:1px solid var(--line2);border-radius:9px;margin-bottom:7px;cursor:pointer}
+.chk{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line2);border-radius:var(--r-sm);
+  margin-bottom:7px;cursor:pointer;transition:border-color var(--tempo),background var(--tempo)}
 .chk:hover{border-color:var(--acc)}
 .chk input{margin:2px 0 0;width:16px;height:16px;flex:0 0 16px;accent-color:var(--bad)}
 .chk .t{font-size:13px}
@@ -219,7 +246,7 @@ html.modal-offen,html.modal-offen body{overflow:hidden}
 .lawtext{font-size:13.5px;line-height:1.65}
 .lawtext h4{margin:18px 0 6px;font-size:14px;color:var(--acc)}
 .lawtext p{margin:0 0 8px}
-.lawcard{border:1px solid var(--line);border-radius:10px;padding:13px 15px;margin-bottom:10px;background:var(--card)}
+.lawcard{border:1px solid var(--line);border-radius:var(--r-sm);padding:14px 16px;margin-bottom:10px;background:var(--card)}
 .lawcard .p{font-size:12px;color:var(--tx3);margin-bottom:3px;letter-spacing:.3px}
 .lawcard b{display:block;margin-bottom:5px}
 .gesetz{display:flex;flex-direction:column;gap:8px}
@@ -265,20 +292,6 @@ html.modal-offen,html.modal-offen body{overflow:hidden}
 .plist .empty{padding:12px;font-size:13px}
 .videobox{position:relative;padding-top:56.25%;border-radius:11px;overflow:hidden;background:#000;border:1px solid var(--line2)}
 .videobox iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
-.task{display:flex;gap:11px;align-items:flex-start;background:var(--card);border:1px solid var(--line);
-  border-radius:10px;padding:11px 13px;margin-bottom:7px}
-.task .tbody{flex:1;min-width:0}
-.task .tt{font-size:13.5px}
-.task .ts{font-size:12px;color:var(--tx3);margin-top:3px;display:flex;gap:10px;flex-wrap:wrap}
-.task.done{opacity:.5}
-.task.done .tt{text-decoration:line-through}
-.task.auto{background:var(--card2)}
-.tcheck{flex:0 0 20px;width:20px;height:20px;border-radius:6px;border:1.5px solid var(--line2);
-  background:var(--bg);cursor:pointer;color:#fff;font-size:12px;line-height:1;padding:0}
-.tcheck:hover{border-color:var(--acc)}
-.tcheck.on{background:var(--ok);border-color:var(--ok)}
-.tdot{flex:0 0 9px;width:9px;height:9px;border-radius:50%;margin-top:6px}
-.tdot.bad{background:var(--bad)} .tdot.neutral{background:var(--neutral)}
 .werbe{display:flex;gap:8px;align-items:flex-start;margin-bottom:8px}
 .werbe textarea{flex:1;min-height:52px;resize:vertical}
 .werbe .row{flex:0 0 auto;flex-direction:column;gap:5px}
@@ -825,13 +838,13 @@ const rueckOf=d=>RUECK[d&&d.rueck]||RUECK[""];
 /* Leitfaden: so gehst du einen Fall von der Annahme bis zur Abrechnung durch.
    Jeder Punkt nennt die Vorschrift, aus der sich der Schritt ergibt.        */
 
-const blank={clients:[],cases:[],docs:[],werbung:[],tasks:[],profile:{name:"",phone:"",pass:"",kanzlei:"",orga:""},
+const blank={clients:[],cases:[],docs:[],werbung:[],profile:{name:"",phone:"",pass:"",kanzlei:"",orga:""},
              tpl:{},settings:{ravo:{}},theme:"dark"};
 let DB=load(), view="dash", ui={};
 
 function migrate(d){
   if(!Array.isArray(d.werbung)) d.werbung=[];
-  if(!Array.isArray(d.tasks)) d.tasks=[];
+  delete d.tasks;                     /* frueherer Aufgabenbereich */
   d.settings=Object.assign({ravo:{}},d.settings||{});
   delete d.settings.discord;          /* fruehere Online-Anmeldung */
   d.settings.ravo=d.settings.ravo||{};
@@ -901,6 +914,7 @@ function setSaveState(txt,color){
   },2600);
 }
 function save(){
+  idxWeg();
   try{
     const prev=localStorage.getItem(KEY);
     if(prev) localStorage.setItem(BAK,prev);
@@ -924,14 +938,31 @@ const pct=(a,b)=>b?Math.round(a/b*100):0;
 const today=()=>new Date().toISOString().slice(0,10);
 const daysBetween=(a,b)=>Math.floor((new Date(b+"T00:00:00")-new Date(a+"T00:00:00"))/86400000);
 const starTx=n=>n>0?'<span class="stars">'+"⭐".repeat(Math.min(n,5))+(n>5?" ×"+n:"")+"</span>":'<span class="muted">–</span>';
-const client=id=>DB.clients.find(c=>c.id===id);
-const casesOf=id=>DB.cases.filter(c=>c.clientId===id);
+/* --- Index ------------------------------------------------------------------
+   Mandantenliste und Auswertungen greifen sehr oft auf dieselben Zuordnungen zu.
+   Ohne Index waere das quadratisch (jeder Mandant durchsucht alle F\u00e4lle, jeder
+   Fall alle Schriftst\u00fccke). Der Index wird bei jeder \u00c4nderung verworfen.       */
+let _idx=null;
+const idxWeg=()=>{_idx=null;};
+function idx(){
+  if(_idx) return _idx;
+  const mandant=new Map(), faelleJeMandant=new Map(), fall=new Map(),
+        docsJeMandant=new Map(), docsJeFall=new Map();
+  const rein=(m,k,v)=>{ const l=m.get(k); if(l) l.push(v); else m.set(k,[v]); };
+  DB.clients.forEach(c=>mandant.set(c.id,c));
+  DB.cases.forEach(c=>{ fall.set(c.id,c); rein(faelleJeMandant,c.clientId,c); });
+  DB.docs.forEach(d=>{ rein(docsJeMandant,d.clientId,d); if(d.caseId) rein(docsJeFall,d.caseId,d); });
+  return (_idx={mandant,faelleJeMandant,fall,docsJeMandant,docsJeFall});
+}
+const LEER=[];
+const client=id=>idx().mandant.get(id);
+const casesOf=id=>idx().faelleJeMandant.get(id)||LEER;
 /* Schriftsätze einer Mandantschaft bzw. eines Verfahrens */
-const docsOf=id=>DB.docs.filter(d=>d.clientId===id);
-const docsOfCase=id=>DB.docs.filter(d=>d.caseId===id);
+const docsOf=id=>idx().docsJeMandant.get(id)||LEER;
+const docsOfCase=id=>idx().docsJeFall.get(id)||LEER;
 /* Schriftsaetze ohne Verfahren - nur die kommen beim Mandanten noch obendrauf,
    alles andere steckt bereits im Honorar des jeweiligen Falls.             */
-const docsLose=id=>DB.docs.filter(d=>d.clientId===id&&!DB.cases.some(c=>c.id===d.caseId));
+const docsLose=id=>docsOf(id).filter(d=>!idx().fall.has(d.caseId));
 /* Zahlen zu Schriftsätzen: erledigt = genehmigt oder abgelehnt */
 function docStats(list){
   const s={n:list.length,entwurf:0,submitted:0,approved:0,rejected:0,fee:0,offen:0};
@@ -1047,8 +1078,8 @@ function ravoMax(type,qty){
 function caseFees(c,exclDocId){
   if(!c) return [];
   const out=(c.fees||[]).map(f=>({...f,src:"fall"}));
-  DB.docs.forEach(d=>{
-    if(d.caseId!==c.id||d.type==="rechnung"||!(+d.fee)) return;
+  docsOfCase(c.id).forEach(d=>{
+    if(d.type==="rechnung"||!(+d.fee)) return;
     if(exclDocId&&d.id===exclDocId) return;
     const t=TPL[d.type]||{};
     out.push({type:t.fee||"antrag",qty:1,amount:+d.fee||0,paid:!!d.paid,date:d.date||"",
@@ -1190,7 +1221,6 @@ const NAV=[
   {id:"clients",ic:"👤", lbl:"Mandanten", cnt:()=>DB.clients.length},
   {id:"cases",  ic:"📁", lbl:"Fälle",     cnt:()=>DB.cases.length},
   {id:"antrag", ic:"📄", lbl:"Schriftsätze", cnt:()=>DB.docs.length},
-  {id:"tasks",  ic:"✅", lbl:"Aufgaben", cnt:()=>AUFGABEN_ALLE(), alert:1},
   {id:"fees",   ic:"💰", lbl:"Honorar",   cnt:()=>DB.cases.filter(c=>feeOpen(c)>0).length+DB.docs.filter(l=>l.fee&&!l.paid&&l.type!=="rechnung").length, alert:1},
   {id:"law",    ic:"📖", lbl:"Gesetze",   cnt:()=>CATALOG.length},
   {id:"data",   ic:"💾", lbl:"Daten"}
@@ -1215,9 +1245,10 @@ function renderNav(){
   }).join("");
 }
 function render(){
+  idxWeg();
   renderNav();
   document.getElementById("main").innerHTML=
-    ({dash:vDash,clients:vClients,cases:vCases,antrag:vDocs,tasks:vTasks,fees:vFees,law:vLaw,data:vData}[view]||vDash)();
+    ({dash:vDash,clients:vClients,cases:vCases,antrag:vDocs,fees:vFees,law:vLaw,data:vData}[view]||vDash)();
   renderLawyerBar();
 }
 const go=v=>{view=v;render();};
@@ -2501,7 +2532,7 @@ function mDoc(id,type,preset){
         <label class="f"><span>R\u00fccksprache mit der Mandantschaft</span><select name="rueck">
           ${Object.entries(RUECK).map(([k,v])=>'<option value="'+k+'"'+((cur.rueck||"")===k?" selected":"")+'>'+v.lbl+'</option>').join("")}
         </select>
-        <div class="hint">\u201emuss besprochen werden\u201c erscheint als Aufgabe unter \u2705 Aufgaben.</div></label>
+        <div class="hint">In jeder Schriftsatzliste mit einem Klick umschaltbar.</div></label>
       </div>
       <div class="sec-title" style="margin-top:2px">Mandantschaft</div>
       ${pickerField("clientId","Aus der Kartei",mandantenPick(),cur.clientId,"leer lassen und Daten unten eintragen")}
@@ -3003,91 +3034,6 @@ function faellePick(){
          outcomeInfo(c.outcome,c.procedure).short].filter(Boolean).join(" · ")};});
 }
 
-
-/* =============================================================================
-   AUFGABEN - eigene Notizen plus das, was sich aus der Akte von selbst ergibt
-   ============================================================================= */
-const taskOffen=()=>DB.tasks.filter(t=>!t.done);
-function taskZiel(t){
-  if(t.docId){  const d=DB.docs.find(x=>x.id===t.docId);   if(d) return {art:"doc",id:d.id,txt:(tplOf(d.type)||{}).lbl+" "+(d.no||"")}; }
-  if(t.caseId){ const c=DB.cases.find(x=>x.id===t.caseId); if(c) return {art:"case",id:c.id,txt:"Fall "+(c.caseNo||"")}; }
-  if(t.clientId){const k=client(t.clientId);               if(k) return {art:"client",id:k.id,txt:k.name}; }
-  return null;
-}
-/* Was die Akte selbst an Arbeit vorgibt - nicht gespeichert, immer aktuell */
-function taskAuto(){
-  const out=[];
-  const add=(k,txt,ziel,dring)=>out.push({k,txt,ziel,dring});
-  DB.docs.forEach(d=>{
-    const t=tplOf(d.type)||{}, cl=client(d.clientId);
-    if(d.rueck==="offen")
-      add("r"+d.id,"Mit "+(cl?cl.name:"der Mandantschaft")+" besprechen: "+t.lbl+(d.no?" "+d.no:""),
-          {art:"doc",id:d.id,txt:d.no||t.lbl},true);
-    if((d.status||"entwurf")==="entwurf")
-      add("e"+d.id,"Entwurf fertigstellen: "+t.lbl+(d.no?" "+d.no:""),{art:"doc",id:d.id,txt:d.no||t.lbl},false);
-    if(d.fee&&!d.paid&&d.type!=="rechnung")
-      add("g"+d.id,"Geb\u00fchr offen: "+money(d.fee)+" f\u00fcr "+t.lbl+(d.no?" "+d.no:""),{art:"doc",id:d.id,txt:d.no||t.lbl},false);
-  });
-  DB.cases.forEach(c=>{
-    const cl=client(c.clientId), r=revisionStatus(c);
-    if(r.s==="open"&&c.outcome!=="freed"&&c.outcome!=="pending")
-      add("f"+c.id,"Revisionsfrist l\u00e4uft: "+(c.caseNo||"")+" \u00b7 "+(cl?cl.name:"?"),{art:"case",id:c.id,txt:c.caseNo||""},true);
-    if(errCount(c)&&c.outcome!=="freed")
-      add("x"+c.id,"Abhandlungsfehler pr\u00fcfen: "+(c.caseNo||"")+" \u00b7 "+(cl?cl.name:"?"),{art:"case",id:c.id,txt:c.caseNo||""},true);
-    const off=feeOpen(c);
-    if(off) add("h"+c.id,"Honorar offen: "+money(off)+" \u00b7 "+(c.caseNo||""),{art:"case",id:c.id,txt:c.caseNo||""},false);
-  });
-  DB.clients.forEach(k=>{
-    if(!k.phone||!k.pass)
-      add("m"+k.id,"Mandantendaten erg\u00e4nzen: "+k.name+(k.phone?"":", Telefon")+(k.pass?"":", Reisepass"),
-          {art:"client",id:k.id,txt:k.name},false);
-  });
-  return out;
-}
-const AUFGABEN_ALLE=()=>taskOffen().length+taskAuto().length;
-
-function vTasks(){
-  const offen=taskOffen().sort((a,b)=>(a.due||"9999").localeCompare(b.due||"9999")||(b.created||"").localeCompare(a.created||""));
-  const fertig=DB.tasks.filter(t=>t.done).sort((a,b)=>(b.erledigtAm||"").localeCompare(a.erledigtAm||"")).slice(0,20);
-  const auto=taskAuto();
-  const heute=today();
-  const zeile=t=>{
-    const z=taskZiel(t), spaet=t.due&&t.due<heute;
-    return `<div class="task${t.done?" done":""}">
-      <button type="button" class="tcheck${t.done?" on":""}" data-act="taskDone" data-id="${t.id}" title="${t.done?"wieder \u00f6ffnen":"erledigt"}">${t.done?"\u2713":""}</button>
-      <div class="tbody">
-        <div class="tt">${esc(t.text)}</div>
-        <div class="ts">
-          ${t.due?'<span class="'+(spaet?"bad-tx":"muted")+'">f\u00e4llig '+dateDE(t.due)+'</span>':""}
-          ${z?'<a href="#" data-'+z.art+'="'+z.id+'">'+esc(z.txt)+'</a>':""}
-        </div>
-      </div>
-      <button type="button" class="btn ghost sm" data-act="taskDel" data-id="${t.id}" title="l\u00f6schen">\u2715</button>
-    </div>`;
-  };
-  return `
-  <header class="top"><div><h2>Aufgaben</h2>
-    <div class="sub">${offen.length} offen \u00b7 ${auto.length} ergeben sich aus der Akte</div></div>
-    <div class="spacer"></div></header>
-
-  <form id="taskNeu" class="toolbar" style="align-items:flex-start">
-    <input type="text" name="text" placeholder="Was ist zu tun?" style="flex:1;min-width:220px" autocomplete="off">
-    <input type="date" name="due" style="width:auto" title="f\u00e4llig bis">
-    <button class="btn primary" type="submit">\uff0b Aufgabe</button>
-  </form>
-
-  ${offen.length?offen.map(zeile).join(""):'<div class="card empty" style="padding:26px">Keine eigenen Aufgaben offen.</div>'}
-
-  ${auto.length?`<div class="sec-title">Ergibt sich aus der Akte</div>
-    ${auto.map(a=>`<div class="task auto">
-      <span class="tdot ${a.dring?"bad":"neutral"}"></span>
-      <div class="tbody"><div class="tt">${esc(a.txt)}</div>
-        <div class="ts"><a href="#" data-${a.ziel.art}="${a.ziel.id}">${esc(a.ziel.txt)}</a></div></div>
-      <button type="button" class="btn ghost sm" data-act="taskFrom" data-k="${esc(a.k)}" title="als eigene Aufgabe \u00fcbernehmen">\uff0b</button>
-    </div>`).join("")}`:""}
-
-  ${fertig.length?`<div class="sec-title">Zuletzt erledigt</div>${fertig.map(zeile).join("")}`:""}`;
-}
 
 /* =============================================================================
    Werbesprueche - eigene Zeilen zum Herauskopieren, sonst ohne Funktion
@@ -3935,7 +3881,7 @@ function mCaseView(id){
    ============================================================================= */
 function mClientView(id){
   const c=client(id); if(!c) return;
-  const list=casesOf(id).sort(byDateDesc), s=stats(list);
+  const list=[...casesOf(id)].sort(byDateDesc), s=stats(list);   /* Index-Array nicht in place sortieren */
   openModal(`<div class="modal-h"><h3>${esc(c.name)}</h3><span class="muted mono">${esc(c.pass||"ohne Reisepass")}</span>
       <button type="button" class="x" data-act="close">×</button></div>
     <div class="modal-b">
@@ -4258,21 +4204,6 @@ document.addEventListener("click",e=>{
       case "saveDocId": {
         const sd=DB.docs.find(x=>x.id===id); if(sd) saveDocFile(sd); return;
       }
-      case "taskDone": {
-        const t=DB.tasks.find(x=>x.id===id); if(!t) return;
-        t.done=!t.done; t.erledigtAm=t.done?new Date().toISOString():"";
-        save(); return render();
-      }
-      case "taskDel": {
-        DB.tasks=DB.tasks.filter(x=>x.id!==id); save(); render(); return toast("Aufgabe gel\u00f6scht");
-      }
-      case "taskFrom": {
-        const auf=taskAuto().find(x=>x.k===a.dataset.k); if(!auf) return;
-        DB.tasks.push({id:uid(),text:auf.txt,done:false,due:"",created:new Date().toISOString(),
-          clientId:auf.ziel.art==="client"?auf.ziel.id:"",caseId:auf.ziel.art==="case"?auf.ziel.id:"",
-          docId:auf.ziel.art==="doc"?auf.ziel.id:""});
-        save(); render(); return toast("Als eigene Aufgabe \u00fcbernommen");
-      }
       case "docRueck": {
         const dr2=DB.docs.find(x=>x.id===id); if(!dr2) return;
         dr2.rueck=dr2.rueck==="offen"?"erledigt":"offen"; save(); render();
@@ -4375,17 +4306,6 @@ document.addEventListener("change",e=>{
 document.addEventListener("keydown",e=>{
   if(e.key==="Escape"&&!modalHatFormular()) closeModal();
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="n"&&!e.shiftKey){e.preventDefault();if(DB.clients.length){ui.caseTab="fall";mCase();}}
-});
-/* Neue Aufgabe anlegen */
-document.addEventListener("submit",e=>{
-  if(!e.target||e.target.id!=="taskNeu") return;
-  e.preventDefault();
-  const f=new FormData(e.target), txt=(f.get("text")||"").trim();
-  if(!txt) return;
-  DB.tasks.push({id:uid(),text:txt,done:false,due:f.get("due")||"",created:new Date().toISOString(),
-                 clientId:"",caseId:"",docId:""});
-  save(); render();
-  const n=document.querySelector("#taskNeu [name=text]"); if(n) n.focus();
 });
 document.getElementById("themeBtn").onclick=()=>{
   DB.theme=DB.theme==="dark"?"light":"dark";
