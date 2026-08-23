@@ -265,6 +265,20 @@ html.modal-offen,html.modal-offen body{overflow:hidden}
 .plist .empty{padding:12px;font-size:13px}
 .videobox{position:relative;padding-top:56.25%;border-radius:11px;overflow:hidden;background:#000;border:1px solid var(--line2)}
 .videobox iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.task{display:flex;gap:11px;align-items:flex-start;background:var(--card);border:1px solid var(--line);
+  border-radius:10px;padding:11px 13px;margin-bottom:7px}
+.task .tbody{flex:1;min-width:0}
+.task .tt{font-size:13.5px}
+.task .ts{font-size:12px;color:var(--tx3);margin-top:3px;display:flex;gap:10px;flex-wrap:wrap}
+.task.done{opacity:.5}
+.task.done .tt{text-decoration:line-through}
+.task.auto{background:var(--card2)}
+.tcheck{flex:0 0 20px;width:20px;height:20px;border-radius:6px;border:1.5px solid var(--line2);
+  background:var(--bg);cursor:pointer;color:#fff;font-size:12px;line-height:1;padding:0}
+.tcheck:hover{border-color:var(--acc)}
+.tcheck.on{background:var(--ok);border-color:var(--ok)}
+.tdot{flex:0 0 9px;width:9px;height:9px;border-radius:50%;margin-top:6px}
+.tdot.bad{background:var(--bad)} .tdot.neutral{background:var(--neutral)}
 .werbe{display:flex;gap:8px;align-items:flex-start;margin-bottom:8px}
 .werbe textarea{flex:1;min-height:52px;resize:vertical}
 .werbe .row{flex:0 0 auto;flex-direction:column;gap:5px}
@@ -801,15 +815,23 @@ const ANTRAG_STATUS={
   approved: {lbl:"Genehmigt",   cls:"ok"},
   rejected: {lbl:"Abgelehnt",   cls:"bad"}
 };
+/* Zweite Spur neben dem Status: die Absprache mit der Mandantschaft */
+const RUECK={
+  "":        {lbl:"keine R\u00fccksprache n\u00f6tig", kurz:"\u2013",             cls:"tag"},
+  offen:     {lbl:"muss besprochen werden", kurz:"Besprechen",  cls:"bad"},
+  erledigt:  {lbl:"besprochen",             kurz:"Besprochen",  cls:"ok"}
+};
+const rueckOf=d=>RUECK[d&&d.rueck]||RUECK[""];
 /* Leitfaden: so gehst du einen Fall von der Annahme bis zur Abrechnung durch.
    Jeder Punkt nennt die Vorschrift, aus der sich der Schritt ergibt.        */
 
-const blank={clients:[],cases:[],docs:[],werbung:[],profile:{name:"",phone:"",pass:"",kanzlei:"",orga:""},
+const blank={clients:[],cases:[],docs:[],werbung:[],tasks:[],profile:{name:"",phone:"",pass:"",kanzlei:"",orga:""},
              tpl:{},settings:{ravo:{}},theme:"dark"};
 let DB=load(), view="dash", ui={};
 
 function migrate(d){
   if(!Array.isArray(d.werbung)) d.werbung=[];
+  if(!Array.isArray(d.tasks)) d.tasks=[];
   d.settings=Object.assign({ravo:{}},d.settings||{});
   delete d.settings.discord;          /* fruehere Online-Anmeldung */
   d.settings.ravo=d.settings.ravo||{};
@@ -1168,6 +1190,7 @@ const NAV=[
   {id:"clients",ic:"👤", lbl:"Mandanten", cnt:()=>DB.clients.length},
   {id:"cases",  ic:"📁", lbl:"Fälle",     cnt:()=>DB.cases.length},
   {id:"antrag", ic:"📄", lbl:"Schriftsätze", cnt:()=>DB.docs.length},
+  {id:"tasks",  ic:"✅", lbl:"Aufgaben", cnt:()=>AUFGABEN_ALLE(), alert:1},
   {id:"fees",   ic:"💰", lbl:"Honorar",   cnt:()=>DB.cases.filter(c=>feeOpen(c)>0).length+DB.docs.filter(l=>l.fee&&!l.paid&&l.type!=="rechnung").length, alert:1},
   {id:"law",    ic:"📖", lbl:"Gesetze",   cnt:()=>CATALOG.length},
   {id:"data",   ic:"💾", lbl:"Daten"}
@@ -1194,7 +1217,7 @@ function renderNav(){
 function render(){
   renderNav();
   document.getElementById("main").innerHTML=
-    ({dash:vDash,clients:vClients,cases:vCases,antrag:vDocs,fees:vFees,law:vLaw,data:vData}[view]||vDash)();
+    ({dash:vDash,clients:vClients,cases:vCases,antrag:vDocs,tasks:vTasks,fees:vFees,law:vLaw,data:vData}[view]||vDash)();
   renderLawyerBar();
 }
 const go=v=>{view=v;render();};
@@ -2177,7 +2200,7 @@ function vDocs(){
       ${Object.entries(ANTRAG_STATUS).map(([k,v])=>'<option value="'+k+'"'+(ui.astatus===k?" selected":"")+'>'+v.lbl+'</option>').join("")}</select>
   </div>
   ${list.length?`<div class="tblwrap"><table>
-    <thead><tr><th>Aktenzeichen</th><th>Datum</th><th>Vorlage</th><th>Mandant</th><th>Betrifft</th><th>Status</th><th>Gebühr</th><th>Vollständig</th><th></th></tr></thead>
+    <thead><tr><th>Aktenzeichen</th><th>Datum</th><th>Vorlage</th><th>Mandant</th><th>Betrifft</th><th>Status</th><th>Rücksprache</th><th>Gebühr</th><th>Vollständig</th><th></th></tr></thead>
     <tbody>${list.map(d=>{const x=docCheck(d),st=ANTRAG_STATUS[d.status]||ANTRAG_STATUS.entwurf,t=x.t;
       const c=d.caseId?DB.cases.find(k=>k.id===d.caseId):null;
       return `<tr class="click" data-doc="${d.id}">
@@ -2187,10 +2210,12 @@ function vDocs(){
         <td>${x.name?esc(x.name):'<span class="muted">–</span>'}</td>
         <td class="mono muted">${c?esc(c.caseNo||""):esc(d.familyName||d.gegner||d.beamter||d.taeter||"–")}</td>
         <td><span class="pill ${st.cls}">${st.lbl}</span></td>
+        <td>${(r=>r===RUECK[""]?'<span class="muted">–</span>'
+          :'<button type="button" class="pill '+r.cls+'" data-act="docRueck" data-id="'+d.id+'" title="umschalten">'+r.kurz+'</button>')(rueckOf(d))}</td>
         <td class="mono">${d.fee?money(d.fee)+(d.paid?' <span class="pill ok">bezahlt</span>'
           :' <button type="button" class="pill bad" data-act="docPaid" data-id="'+d.id+'" title="als bezahlt markieren">offen</button>')
           :'<span class="muted">–</span>'}</td>
-        <td>${x.ok?'<span class="pill ok">ja</span>':'<span class="pill bad">'+x.miss.length+'</span>'}${d.eigenerText?' <span class="pill tag" title="eigener Wortlaut">✎</span>':""}</td>
+        <td>${x.ok?'<span class="pill ok">ja</span>':'<span class="pill bad">'+x.miss.length+' fehlt</span>'}${d.eigenerText?' <span class="pill tag" title="eigener Wortlaut">✎</span>':""}</td>
         <td style="text-align:right"><button class="btn ghost sm" data-act="printDoc" data-id="${d.id}" title="Als PDF drucken">🖨</button></td>
       </tr>`;}).join("")}
     </tbody></table></div>`
@@ -2473,6 +2498,10 @@ function mDoc(id,type,preset){
         <label class="f"><span>Status</span><select name="status">
           ${Object.entries(ANTRAG_STATUS).map(([k,v])=>'<option value="'+k+'"'+(cur.status===k?" selected":"")+'>'+v.lbl+'</option>').join("")}
         </select></label>
+        <label class="f"><span>R\u00fccksprache mit der Mandantschaft</span><select name="rueck">
+          ${Object.entries(RUECK).map(([k,v])=>'<option value="'+k+'"'+((cur.rueck||"")===k?" selected":"")+'>'+v.lbl+'</option>').join("")}
+        </select>
+        <div class="hint">\u201emuss besprochen werden\u201c erscheint als Aufgabe unter \u2705 Aufgaben.</div></label>
       </div>
       <div class="sec-title" style="margin-top:2px">Mandantschaft</div>
       ${pickerField("clientId","Aus der Kartei",mandantenPick(),cur.clientId,"leer lassen und Daten unten eintragen")}
@@ -2525,7 +2554,8 @@ function mDoc(id,type,preset){
     const o={id:d?d.id:undefined,type:tp,no:form.no.value,date:form.date.value,status:form.status.value,
       clientId:form.clientId.value,extName:form.extName.value,extPass:form.extPass.value,extPhone:form.extPhone.value,
       caseId:form.caseId.value,
-      fee:form.fee?(+form.fee.value||0):0,paid:form.paid?form.paid.checked:false,note:form.note.value,posten};
+      fee:form.fee?(+form.fee.value||0):0,paid:form.paid?form.paid.checked:false,note:form.note.value,posten,
+      rueck:form.rueck?form.rueck.value:(cur.rueck||"")};
     (t.fields||[]).forEach(f=>{
       if(f.t==="posten") return;
       const el=form[f.k]; if(!el) return;
@@ -2748,6 +2778,7 @@ function mDocView(id){
         ${dd("Datum",dateDE(d.date))}
         ${c?dd("Verfahren",'<a href="#" data-case="'+c.id+'">'+esc(c.caseNo||"")+'</a>'):""}
         ${dd("Gebühr",money(d.fee)+(d.fee?' <button type="button" class="pill '+(d.paid?"ok":"bad")+'" data-act="docPaid" data-id="'+d.id+'">'+(d.paid?"bezahlt":"offen")+'</button>':""))}
+        ${dd("Rücksprache",'<button type="button" class="pill '+rueckOf(d).cls+'" data-act="docRueck" data-id="'+d.id+'">'+esc(rueckOf(d).lbl)+'</button>')}
       </div>
       ${x.t.frist?'<div class="box warn"><b>Frist:</b> '+esc(x.t.frist)+'</div>':""}
       ${d.eigenerText?'<div class="box info">Dieser Schriftsatz hat einen eigenen Wortlaut; die Vorlage ist unverändert.</div>':""}
@@ -2972,6 +3003,92 @@ function faellePick(){
          outcomeInfo(c.outcome,c.procedure).short].filter(Boolean).join(" · ")};});
 }
 
+
+/* =============================================================================
+   AUFGABEN - eigene Notizen plus das, was sich aus der Akte von selbst ergibt
+   ============================================================================= */
+const taskOffen=()=>DB.tasks.filter(t=>!t.done);
+function taskZiel(t){
+  if(t.docId){  const d=DB.docs.find(x=>x.id===t.docId);   if(d) return {art:"doc",id:d.id,txt:(tplOf(d.type)||{}).lbl+" "+(d.no||"")}; }
+  if(t.caseId){ const c=DB.cases.find(x=>x.id===t.caseId); if(c) return {art:"case",id:c.id,txt:"Fall "+(c.caseNo||"")}; }
+  if(t.clientId){const k=client(t.clientId);               if(k) return {art:"client",id:k.id,txt:k.name}; }
+  return null;
+}
+/* Was die Akte selbst an Arbeit vorgibt - nicht gespeichert, immer aktuell */
+function taskAuto(){
+  const out=[];
+  const add=(k,txt,ziel,dring)=>out.push({k,txt,ziel,dring});
+  DB.docs.forEach(d=>{
+    const t=tplOf(d.type)||{}, cl=client(d.clientId);
+    if(d.rueck==="offen")
+      add("r"+d.id,"Mit "+(cl?cl.name:"der Mandantschaft")+" besprechen: "+t.lbl+(d.no?" "+d.no:""),
+          {art:"doc",id:d.id,txt:d.no||t.lbl},true);
+    if((d.status||"entwurf")==="entwurf")
+      add("e"+d.id,"Entwurf fertigstellen: "+t.lbl+(d.no?" "+d.no:""),{art:"doc",id:d.id,txt:d.no||t.lbl},false);
+    if(d.fee&&!d.paid&&d.type!=="rechnung")
+      add("g"+d.id,"Geb\u00fchr offen: "+money(d.fee)+" f\u00fcr "+t.lbl+(d.no?" "+d.no:""),{art:"doc",id:d.id,txt:d.no||t.lbl},false);
+  });
+  DB.cases.forEach(c=>{
+    const cl=client(c.clientId), r=revisionStatus(c);
+    if(r.s==="open"&&c.outcome!=="freed"&&c.outcome!=="pending")
+      add("f"+c.id,"Revisionsfrist l\u00e4uft: "+(c.caseNo||"")+" \u00b7 "+(cl?cl.name:"?"),{art:"case",id:c.id,txt:c.caseNo||""},true);
+    if(errCount(c)&&c.outcome!=="freed")
+      add("x"+c.id,"Abhandlungsfehler pr\u00fcfen: "+(c.caseNo||"")+" \u00b7 "+(cl?cl.name:"?"),{art:"case",id:c.id,txt:c.caseNo||""},true);
+    const off=feeOpen(c);
+    if(off) add("h"+c.id,"Honorar offen: "+money(off)+" \u00b7 "+(c.caseNo||""),{art:"case",id:c.id,txt:c.caseNo||""},false);
+  });
+  DB.clients.forEach(k=>{
+    if(!k.phone||!k.pass)
+      add("m"+k.id,"Mandantendaten erg\u00e4nzen: "+k.name+(k.phone?"":", Telefon")+(k.pass?"":", Reisepass"),
+          {art:"client",id:k.id,txt:k.name},false);
+  });
+  return out;
+}
+const AUFGABEN_ALLE=()=>taskOffen().length+taskAuto().length;
+
+function vTasks(){
+  const offen=taskOffen().sort((a,b)=>(a.due||"9999").localeCompare(b.due||"9999")||(b.created||"").localeCompare(a.created||""));
+  const fertig=DB.tasks.filter(t=>t.done).sort((a,b)=>(b.erledigtAm||"").localeCompare(a.erledigtAm||"")).slice(0,20);
+  const auto=taskAuto();
+  const heute=today();
+  const zeile=t=>{
+    const z=taskZiel(t), spaet=t.due&&t.due<heute;
+    return `<div class="task${t.done?" done":""}">
+      <button type="button" class="tcheck${t.done?" on":""}" data-act="taskDone" data-id="${t.id}" title="${t.done?"wieder \u00f6ffnen":"erledigt"}">${t.done?"\u2713":""}</button>
+      <div class="tbody">
+        <div class="tt">${esc(t.text)}</div>
+        <div class="ts">
+          ${t.due?'<span class="'+(spaet?"bad-tx":"muted")+'">f\u00e4llig '+dateDE(t.due)+'</span>':""}
+          ${z?'<a href="#" data-'+z.art+'="'+z.id+'">'+esc(z.txt)+'</a>':""}
+        </div>
+      </div>
+      <button type="button" class="btn ghost sm" data-act="taskDel" data-id="${t.id}" title="l\u00f6schen">\u2715</button>
+    </div>`;
+  };
+  return `
+  <header class="top"><div><h2>Aufgaben</h2>
+    <div class="sub">${offen.length} offen \u00b7 ${auto.length} ergeben sich aus der Akte</div></div>
+    <div class="spacer"></div></header>
+
+  <form id="taskNeu" class="toolbar" style="align-items:flex-start">
+    <input type="text" name="text" placeholder="Was ist zu tun?" style="flex:1;min-width:220px" autocomplete="off">
+    <input type="date" name="due" style="width:auto" title="f\u00e4llig bis">
+    <button class="btn primary" type="submit">\uff0b Aufgabe</button>
+  </form>
+
+  ${offen.length?offen.map(zeile).join(""):'<div class="card empty" style="padding:26px">Keine eigenen Aufgaben offen.</div>'}
+
+  ${auto.length?`<div class="sec-title">Ergibt sich aus der Akte</div>
+    ${auto.map(a=>`<div class="task auto">
+      <span class="tdot ${a.dring?"bad":"neutral"}"></span>
+      <div class="tbody"><div class="tt">${esc(a.txt)}</div>
+        <div class="ts"><a href="#" data-${a.ziel.art}="${a.ziel.id}">${esc(a.ziel.txt)}</a></div></div>
+      <button type="button" class="btn ghost sm" data-act="taskFrom" data-k="${esc(a.k)}" title="als eigene Aufgabe \u00fcbernehmen">\uff0b</button>
+    </div>`).join("")}`:""}
+
+  ${fertig.length?`<div class="sec-title">Zuletzt erledigt</div>${fertig.map(zeile).join("")}`:""}`;
+}
+
 /* =============================================================================
    Werbesprueche - eigene Zeilen zum Herauskopieren, sonst ohne Funktion
    ============================================================================= */
@@ -3077,7 +3194,7 @@ function mRavo(){
 function docTable(list){
   if(!list.length) return '<div class="box info">keine Schriftsätze</div>';
   return `<div class="tblwrap"><table>
-    <thead><tr><th>Aktenzeichen</th><th>Datum</th><th>Vorlage</th><th>Betrifft</th><th>Status</th><th>Gebühr</th></tr></thead>
+    <thead><tr><th>Aktenzeichen</th><th>Datum</th><th>Vorlage</th><th>Betrifft</th><th>Status</th><th>Rücksprache</th><th>Gebühr</th></tr></thead>
     <tbody>${[...list].sort((a,b)=>(b.date||"").localeCompare(a.date||"")).map(d=>{
       const t=tplOf(d.type)||{}, st=ANTRAG_STATUS[d.status]||ANTRAG_STATUS.entwurf;
       const c=d.caseId?DB.cases.find(k=>k.id===d.caseId):null;
@@ -3087,7 +3204,11 @@ function docTable(list){
         <td>${t.ico||""} ${esc(t.lbl||d.type)}</td>
         <td class="mono muted">${c?esc(c.caseNo||""):esc(d.familyName||d.gegner||d.beamter||d.taeter||"–")}</td>
         <td><span class="pill ${st.cls}">${st.lbl}</span></td>
-        <td class="mono">${d.fee?money(d.fee)+(d.paid?"":' <span class="pill bad">offen</span>'):'<span class="muted">–</span>'}</td>
+        <td>${(r=>r===RUECK[""]?'<span class="muted">–</span>'
+          :'<button type="button" class="pill '+r.cls+'" data-act="docRueck" data-id="'+d.id+'" title="umschalten">'+r.kurz+'</button>')(rueckOf(d))}</td>
+        <td class="mono">${d.fee?money(d.fee)+(d.paid?' <span class="pill ok">bezahlt</span>'
+          :' <button type="button" class="pill bad" data-act="docPaid" data-id="'+d.id+'" title="als bezahlt markieren">offen</button>')
+          :'<span class="muted">–</span>'}</td>
       </tr>`;}).join("")}
     </tbody></table></div>`;
 }
@@ -4137,6 +4258,27 @@ document.addEventListener("click",e=>{
       case "saveDocId": {
         const sd=DB.docs.find(x=>x.id===id); if(sd) saveDocFile(sd); return;
       }
+      case "taskDone": {
+        const t=DB.tasks.find(x=>x.id===id); if(!t) return;
+        t.done=!t.done; t.erledigtAm=t.done?new Date().toISOString():"";
+        save(); return render();
+      }
+      case "taskDel": {
+        DB.tasks=DB.tasks.filter(x=>x.id!==id); save(); render(); return toast("Aufgabe gel\u00f6scht");
+      }
+      case "taskFrom": {
+        const auf=taskAuto().find(x=>x.k===a.dataset.k); if(!auf) return;
+        DB.tasks.push({id:uid(),text:auf.txt,done:false,due:"",created:new Date().toISOString(),
+          clientId:auf.ziel.art==="client"?auf.ziel.id:"",caseId:auf.ziel.art==="case"?auf.ziel.id:"",
+          docId:auf.ziel.art==="doc"?auf.ziel.id:""});
+        save(); render(); return toast("Als eigene Aufgabe \u00fcbernommen");
+      }
+      case "docRueck": {
+        const dr2=DB.docs.find(x=>x.id===id); if(!dr2) return;
+        dr2.rueck=dr2.rueck==="offen"?"erledigt":"offen"; save(); render();
+        if(document.querySelector(".modal")){ closeModal(); mDocView(dr2.id); }
+        return toast(dr2.rueck==="offen"?"Als zu besprechen vermerkt":"Als besprochen vermerkt");
+      }
       case "docPaid": {
         const dp=DB.docs.find(x=>x.id===id); if(!dp) return;
         dp.paid=!dp.paid; save(); render();
@@ -4233,6 +4375,17 @@ document.addEventListener("change",e=>{
 document.addEventListener("keydown",e=>{
   if(e.key==="Escape"&&!modalHatFormular()) closeModal();
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="n"&&!e.shiftKey){e.preventDefault();if(DB.clients.length){ui.caseTab="fall";mCase();}}
+});
+/* Neue Aufgabe anlegen */
+document.addEventListener("submit",e=>{
+  if(!e.target||e.target.id!=="taskNeu") return;
+  e.preventDefault();
+  const f=new FormData(e.target), txt=(f.get("text")||"").trim();
+  if(!txt) return;
+  DB.tasks.push({id:uid(),text:txt,done:false,due:f.get("due")||"",created:new Date().toISOString(),
+                 clientId:"",caseId:"",docId:""});
+  save(); render();
+  const n=document.querySelector("#taskNeu [name=text]"); if(n) n.focus();
 });
 document.getElementById("themeBtn").onclick=()=>{
   DB.theme=DB.theme==="dark"?"light":"dark";
