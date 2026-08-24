@@ -964,27 +964,57 @@ const docsOfCase=id=>idx().docsJeFall.get(id)||LEER;
    alles andere steckt bereits im Honorar des jeweiligen Falls.             */
 const docsLose=id=>docsOf(id).filter(d=>!idx().fall.has(d.caseId));
 /* Zahlen zu Schriftsätzen: erledigt = genehmigt oder abgelehnt */
-/* Eine abgelehnte Rechnung schreibt die darin abgerechneten Posten ab:
-   erledigt, aber nicht erhalten. Wird die Ablehnung zur\u00fcckgenommen, gilt
-   wieder das Gegenteil.                                                     */
-function rechnungAbschreiben(r,an){
-  if(!r||r.type!=="rechnung") return 0;
-  const posten=Array.isArray(r.posten)?r.posten:[];
-  const gleich=(a,b)=>a.type===b.type&&(+a.amount||0)===(+b.amount||0)&&(a.date||"")===(b.date||"");
-  let n=0;
+/* Eine Rechnung schliesst die Posten des Verfahrens ab. Wieviel davon
+   tatsaechlich eingegangen ist, steht auf der Rechnung selbst:
+     genehmigt  -> bezahlt (bei Teilerstattung mit ausgewiesenem Ausfall)
+     abgelehnt  -> abgeschrieben, also erledigt, aber nicht erhalten
+   Zurueckgesetzt wird, sobald die Rechnung wieder offen ist.               */
+function rechnungPosten(r){
+  const raus=[];
   const c=r.caseId?DB.cases.find(x=>x.id===r.caseId):null;
-  if(c) (c.fees||[]).forEach(f=>{
-    if(posten.some(p=>gleich(p,f))&&!!f.abgeschrieben!==an){ f.abgeschrieben=an; n++; }
-  });
+  if(c) (c.fees||[]).forEach(f=>raus.push(f));
   DB.docs.forEach(d=>{
     if(d===r||d.type==="rechnung"||!(+d.fee)) return;
-    if(c&&d.caseId!==c.id) return;
-    const t=TPL[d.type]||{};
-    const alsPosten={type:t.fee||"antrag",amount:+d.fee||0,date:d.date||""};
-    if(posten.some(p=>gleich(p,alsPosten))&&!!d.abgeschrieben!==an){ d.abgeschrieben=an; n++; }
+    if(c?d.caseId!==c.id:d.clientId!==r.clientId) return;
+    raus.push(d);
   });
-  r.abgeschrieben=an;
+  return raus;
+}
+/* Wie eine Gebuehr in Listen dargestellt wird */
+function gebuehrMarke(d){
+  if(!(+d.fee)) return '<span class="muted">–</span>';
+  if(d.type==="rechnung"){
+    const w=rechnungStand(d);
+    if(d.status==="rejected")
+      return money(w.soll)+' <span class="pill neutral" title="erledigt, aber nicht erhalten">abgeschrieben</span>';
+    if(w.teilweise)
+      return money(w.hat)+' <span class="pill warn" title="gefordert '+money(w.soll)+', Ausfall '+money(w.ausfall)+'">von '+money(w.soll)+'</span>';
+    if(w.hat>=w.soll&&w.soll>0) return money(w.soll)+' <span class="pill ok">bezahlt</span>';
+    return money(w.soll)+' <button type="button" class="pill bad" data-act="docPaid" data-id="'+d.id+'" title="als bezahlt markieren">offen</button>';
+  }
+  if(d.paid) return money(d.fee)+' <span class="pill ok">bezahlt</span>';
+  if(d.abgeschrieben) return money(d.fee)+' <span class="pill neutral" title="erledigt, aber nicht erhalten">abgeschrieben</span>';
+  return money(d.fee)+' <button type="button" class="pill bad" data-act="docPaid" data-id="'+d.id+'" title="als bezahlt markieren">offen</button>';
+}
+const rechnungSumme=r=>(Array.isArray(r.posten)?r.posten:[]).reduce((a,q)=>a+(+q.amount||0),0);
+/* zustand: "bezahlt" | "abgeschrieben" | "offen" */
+function rechnungAbrechnen(r,zustand){
+  let n=0;
+  rechnungPosten(r).forEach(f=>{
+    const p=zustand==="bezahlt", a=zustand==="abgeschrieben";
+    if(!!f.paid!==p||!!f.abgeschrieben!==a){ f.paid=p; f.abgeschrieben=a; n++; }
+  });
+  r.paid=zustand==="bezahlt";
+  r.abgeschrieben=zustand==="abgeschrieben";
   return n;
+}
+/* Erhaltener Betrag und Ausfall einer Rechnung */
+function rechnungStand(r){
+  const soll=(+r.fee||0)||rechnungSumme(r);
+  const hat = r.status==="rejected" ? 0
+            : (r.erhalten===""||r.erhalten===undefined||r.erhalten===null) ? (r.paid?soll:0)
+            : Math.max(0,Math.min(soll,+r.erhalten||0));
+  return {soll,hat,ausfall:Math.max(0,soll-hat),teilweise:hat>0&&hat<soll};
 }
 function docStats(list){
   const s={n:list.length,entwurf:0,submitted:0,approved:0,rejected:0,fee:0,offen:0};
@@ -2267,10 +2297,7 @@ function vDocs(){
         <td><span class="pill ${st.cls}">${st.lbl}</span></td>
         <td>${(r=>r===RUECK[""]?'<span class="muted">–</span>'
           :'<button type="button" class="pill '+r.cls+'" data-act="docRueck" data-id="'+d.id+'" title="umschalten">'+r.kurz+'</button>')(rueckOf(d))}</td>
-        <td class="mono">${d.fee?money(d.fee)+(d.paid?' <span class="pill ok">bezahlt</span>'
-          :d.abgeschrieben?' <span class="pill neutral" title="erledigt, aber nicht erhalten">abgeschrieben</span>'
-          :' <button type="button" class="pill bad" data-act="docPaid" data-id="'+d.id+'" title="als bezahlt markieren">offen</button>')
-          :'<span class="muted">–</span>'}</td>
+        <td class="mono">${gebuehrMarke(d)}</td>
         <td>${x.ok?'<span class="pill ok">ja</span>':'<span class="pill bad">'+x.miss.length+' fehlt</span>'}${d.eigenerText?' <span class="pill tag" title="eigener Wortlaut">✎</span>':""}</td>
         <td style="text-align:right"><button class="btn ghost sm" data-act="printDoc" data-id="${d.id}" title="Als PDF drucken">🖨</button></td>
       </tr>`;}).join("")}
@@ -2584,7 +2611,10 @@ function mDoc(id,type,preset){
         Posten als abgeschrieben geführt – erledigt, aber nicht erhalten. Sie zählen dann nicht mehr zu den
         offenen Honoraren, bleiben aber im Nachweis nach §3 V RAVO stehen.</div>
         <label class="chk"><input type="checkbox" name="paid" ${cur.paid?"checked":""}>
-          <div><div class="t">bezahlt</div><div class="s">Die Summe ergibt sich aus den Posten oben.</div></div></label>`:`
+          <div><div class="t">vollständig bezahlt</div><div class="s">Die Summe ergibt sich aus den Posten oben.</div></div></label>
+        <label class="f"><span>Tatsächlich erhalten ($) – bei Teilerstattung</span>
+          <input type="number" name="erhalten" min="0" step="1000" value="${cur.erhalten??""}" placeholder="leer lassen, wenn voll oder gar nicht gezahlt">
+          <div class="hint">Zahlt das GOV nur einen Teil, trag den erhaltenen Betrag ein. Der Rest wird als Ausfall geführt.</div></label>`:`
       <div class="f-row three" style="margin-top:10px">
         <label class="f"><span>Gebühr ($)</span>
           <div style="display:flex;gap:6px"><input type="number" name="fee" min="0" step="1000" value="${cur.fee??""}">
@@ -2614,6 +2644,7 @@ function mDoc(id,type,preset){
       clientId:form.clientId.value,extName:form.extName.value,extPass:form.extPass.value,extPhone:form.extPhone.value,
       caseId:form.caseId.value,
       fee:form.fee?(+form.fee.value||0):0,paid:form.paid?form.paid.checked:false,note:form.note.value,posten,
+      erhalten:form.erhalten?form.erhalten.value:(cur.erhalten??""),
       rueck:form.rueck?form.rueck.value:(cur.rueck||"")};
     (t.fields||[]).forEach(f=>{
       if(f.t==="posten") return;
@@ -2777,16 +2808,25 @@ function mDoc(id,type,preset){
       Object.assign(d,s,{updated:new Date().toISOString()});
       if(eigenerText===null){ delete d.eigenerText; delete d.eigenerBetreff; delete d.eigenerEmpf; }
     }else{ ziel={...s,id:uid(),created:new Date().toISOString()}; DB.docs.push(ziel); }
-    /* Abgelehnte Rechnung: die abgerechneten Posten abschreiben */
-    let abg=0;
+    /* Rechnung abrechnen, sobald sie entschieden ist */
+    let meldung="";
     if(ziel.type==="rechnung"){
-      if(ziel.status==="rejected"&&vorher!=="rejected")      abg=rechnungAbschreiben(ziel,true);
-      else if(vorher==="rejected"&&ziel.status!=="rejected") abg=-rechnungAbschreiben(ziel,false);
+      const st=ziel.status, war=vorher;
+      const zustand = st==="rejected" ? "abgeschrieben"
+                    : (st==="approved"||ziel.paid||(+ziel.erhalten||0)>0) ? "bezahlt" : "offen";
+      if(zustand!=="offen"||war==="rejected"||war==="approved"){
+        rechnungAbrechnen(ziel,zustand);
+        const w=rechnungStand(ziel);
+        meldung = zustand==="abgeschrieben"
+            ? "Abgelehnt \u2013 "+money(w.soll)+" abgeschrieben, nicht mehr offen"
+          : zustand==="bezahlt"
+            ? (w.teilweise?"Teilerstattung: "+money(w.hat)+" erhalten, "+money(w.ausfall)+" Ausfall"
+                          :money(w.hat)+" als bezahlt verbucht")
+            : "Rechnung wieder offen";
+      }
     }
     save();closeModal();render();
-    toast(abg>0?abg+" Posten abgeschrieben \u2013 erledigt, nicht erhalten"
-        : abg<0?(-abg)+" Posten wieder als offen gef\u00fchrt"
-        : d?"Schriftsatz aktualisiert":"Schriftsatz gespeichert");
+    toast(meldung||(d?"Schriftsatz aktualisiert":"Schriftsatz gespeichert"));
   };
 }
 /* Vorschau */
@@ -2850,9 +2890,11 @@ function mDocView(id){
         ${dd("Mandantschaft",x.name?"<b>"+esc(x.name)+"</b>":'<span class="muted">–</span>')}
         ${dd("Datum",dateDE(d.date))}
         ${c?dd("Verfahren",'<a href="#" data-case="'+c.id+'">'+esc(c.caseNo||"")+'</a>'):""}
-        ${dd("Gebühr",money(d.fee)+(!d.fee?"":d.abgeschrieben
-          ?' <span class="pill neutral" title="erledigt, aber nicht erhalten">abgeschrieben</span>'
-          :' <button type="button" class="pill '+(d.paid?"ok":"bad")+'" data-act="docPaid" data-id="'+d.id+'">'+(d.paid?"bezahlt":"offen")+'</button>'))}
+        ${dd("Gebühr",gebuehrMarke(d))}
+        ${(()=>{ if(d.type!=="rechnung") return "";
+           const w=rechnungStand(d);
+           return w.ausfall&&(w.teilweise||d.status==="rejected")
+             ? dd("Ausfall",'<span class="mono bad-tx">'+money(w.ausfall)+'</span>') : "";})()}
         ${dd("Rücksprache",'<button type="button" class="pill '+rueckOf(d).cls+'" data-act="docRueck" data-id="'+d.id+'">'+esc(rueckOf(d).lbl)+'</button>')}
       </div>
       ${x.t.frist?'<div class="box warn"><b>Frist:</b> '+esc(x.t.frist)+'</div>':""}
@@ -3198,10 +3240,7 @@ function docTable(list){
         <td><span class="pill ${st.cls}">${st.lbl}</span></td>
         <td>${(r=>r===RUECK[""]?'<span class="muted">–</span>'
           :'<button type="button" class="pill '+r.cls+'" data-act="docRueck" data-id="'+d.id+'" title="umschalten">'+r.kurz+'</button>')(rueckOf(d))}</td>
-        <td class="mono">${d.fee?money(d.fee)+(d.paid?' <span class="pill ok">bezahlt</span>'
-          :d.abgeschrieben?' <span class="pill neutral" title="erledigt, aber nicht erhalten">abgeschrieben</span>'
-          :' <button type="button" class="pill bad" data-act="docPaid" data-id="'+d.id+'" title="als bezahlt markieren">offen</button>')
-          :'<span class="muted">–</span>'}</td>
+        <td class="mono">${gebuehrMarke(d)}</td>
       </tr>`;}).join("")}
     </tbody></table></div>`;
 }
