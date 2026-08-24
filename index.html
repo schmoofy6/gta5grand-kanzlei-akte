@@ -3973,7 +3973,8 @@ function mCaseView(id){
                  :f.abgeschrieben?'<span class="pill neutral">abgeschrieben</span>':'<span class="pill bad">offen</span>')+'</td></tr>';}).join("")}
         </tbody><tfoot><tr><td colspan="2" class="muted">Gesamt für dieses Verfahren</td>
         <td class="mono"><b>${money(feeTotal(c))}</b></td>
-        <td>${feeOpen(c)?'<span class="pill bad">'+money(feeOpen(c))+' offen</span>':'<span class="pill ok">vollständig bezahlt</span>'}</td></tr></tfoot></table></div>`:"")(caseFees(c))}
+        <td><div class="tags">${feeOpen(c)?'<span class="pill bad">'+money(feeOpen(c))+' offen</span>':'<span class="pill ok">nichts offen</span>'}${
+            feeProBono(c)?'<span class="pill tag">'+money(feeProBono(c))+' pro bono</span>':""}</div></td></tr></tfoot></table></div>`:"")(caseFees(c))}
 
       ${docsOfCase(c.id).length?'<div class="sec-title">Schriftsätze zu diesem Verfahren</div>'+docTable(docsOfCase(c.id)):""}
       ${c.note?'<div class="dt" style="margin-top:16px">Notizen</div><div class="dd" style="white-space:pre-wrap">'+esc(c.note)+'</div>':""}
