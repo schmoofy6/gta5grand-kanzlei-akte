@@ -1891,7 +1891,7 @@ function tplWerte(t,d,x){
     verhaengt:c.final?((c.final.stars||0)+" Hafteinheiten und "+money(c.final.fine)):"",
     zulaessig:r&&r.hits.length?(r.stars+" Hafteinheiten und "+money(r.fine)):"",
     entschaedigung:c.id?money(entschaedigung(c)):"",
-    gebuehr:d.fee?money(d.fee):"",
+    gebuehr:d.probono?"pro bono – nicht berechnet":(d.fee?money(d.fee):""),
     faellig:d.zahlbar?"bis zum "+dateDE(d.zahlbar):"sofort",
     /* Pflichtverteidigung: steuert Empf\u00e4nger, Anrede und Textbausteine */
     pflicht:"", privat:"ja", rechnungsart:"Rechnung", bestellung:"",
@@ -2040,13 +2040,16 @@ function tplBlock(zeile,d,x,v){
   if(m==null) return null;
   if(m[1]==="posten"){
     const ps=Array.isArray(d.posten)?d.posten:[];
-    const sum=ps.reduce((a,q)=>a+(+q.amount||0),0);
-    return tblHtml(["Datum","Leistung","Umfang","Betrag"],
-      ps.length?ps.map(q=>{const rr=RAVO[q.type]||{lbl:q.type,per:0};
+    /* Pro bono erbrachte Posten werden ausgewiesen, aber nicht berechnet */
+    const sum=ps.reduce((a,q)=>a+(q.probono?0:(+q.amount||0)),0);
+    const pb=ps.filter(q=>q.probono).reduce((a,q)=>a+(+q.amount||0),0);
+    const zeilen=ps.length?ps.map(q=>{const rr=RAVO[q.type]||{lbl:q.type,per:0};
         return [q.date?dateDE(q.date):"—",rr.lbl+(q.desc?" – "+q.desc:""),
-                rr.per?((q.qty||1)+" × "+rr.per+" Min."):"Pauschale",money(q.amount)];})
-       :[["—","keine Posten erfasst","—","—"]],
-      ["","","Gesamtbetrag",money(sum)]);
+                rr.per?((q.qty||1)+" × "+rr.per+" Min."):"Pauschale",
+                q.probono?"pro bono":money(q.amount)];})
+       :[["—","keine Posten erfasst","—","—"]];
+    if(pb) zeilen.push(["","davon pro bono erbracht und nicht berechnet","",money(pb)]);
+    return tblHtml(["Datum","Leistung","Umfang","Betrag"],zeilen,["","","Gesamtbetrag",money(sum)]);
   }
   /* Kurzer Steckbrief des Verfahrens - damit die Justiz sieht, wofuer
      abgerechnet wird, ohne die Akte danebenlegen zu muessen.            */
@@ -2198,7 +2201,10 @@ function docHtml(d){
     </div>
     <div class="fuss">
       Rechtsgrundlage: ${esc(t.ref||"—")}.${t.frist?" Frist: "+esc(t.frist)+".":""}
-      ${t.noFee?"":" Gebühr für diesen Schriftsatz: "+(d.fee?money(d.fee):"—")+" (Höchstsatz "+money(ravoMaxOf(t.fee))+" nach "+esc(RAVO[t.fee].ref)+")."}
+      ${t.noFee?"":" Gebühr für diesen Schriftsatz: "+
+        (d.probono?"pro bono – nicht berechnet"+(d.fee?" (Wert "+money(d.fee)+")":"")
+                  :(d.fee?money(d.fee):"—"))+
+        " (Höchstsatz "+money(ravoMaxOf(t.fee))+" nach "+esc(RAVO[t.fee].ref)+")."}
       ${kopf.length?" · "+esc(kopf[0]):""}
     </div>
   </div>`;
@@ -2660,7 +2666,7 @@ function mDoc(id,type,preset){
       const el=form[f.k]; if(!el) return;
       o[f.k]=f.t==="check"?el.checked:(f.t==="num"?(+el.value||0):el.value);
     });
-    if(hatPosten) o.fee=posten.reduce((a,q)=>a+(+q.amount||0),0);
+    if(hatPosten) o.fee=posten.reduce((a,q)=>a+(q.probono?0:(+q.amount||0)),0);
     if(eigenerText!==null){
       const tf=form.querySelector("#wlText"), bf=form.querySelector("#wlBetreff"), ef=form.querySelector("#wlEmpf");
       o.eigenerText   = tf?tf.value:eigenerText;
@@ -2699,17 +2705,21 @@ function mDoc(id,type,preset){
   };
   const drawPosten=()=>{
     const box=form.querySelector("#postenBox"); if(!box) return;
-    const sum=posten.reduce((a,q)=>a+(+q.amount||0),0);
+    const sum=posten.reduce((a,q)=>a+(q.probono?0:(+q.amount||0)),0);
+    const pb=posten.filter(q=>q.probono).reduce((a,q)=>a+(+q.amount||0),0);
     box.innerHTML=posten.length?`<div class="tblwrap"><table>
-      <thead><tr><th>Datum</th><th>Leistung</th><th>Umfang</th><th>Betrag</th><th>Höchstsatz</th><th></th></tr></thead>
+      <thead><tr><th>Datum</th><th>Leistung</th><th>Umfang</th><th>Betrag</th><th>Höchstsatz</th><th></th><th></th></tr></thead>
       <tbody>${posten.map((q,i)=>{const r=RAVO[q.type]||{lbl:q.type,per:0},max=ravoMax(q.type,q.qty),ue=(+q.amount||0)>max;
         return `<tr><td class="mono">${dateDE(q.date)}</td>
           <td>${esc(r.lbl)}${q.desc?'<div class="muted" style="font-size:12px">'+esc(q.desc)+'</div>':""}</td>
           <td class="mono">${r.per?(q.qty||1)+" × "+r.per+" Min.":"Pauschale"}</td>
-          <td class="mono ${ue?"bad-tx":""}"><b>${money(q.amount)}</b></td>
+          <td class="mono ${ue&&!q.probono?"bad-tx":""} ${q.probono?"muted":""}">${q.probono?"<s>"+money(q.amount)+"</s>":"<b>"+money(q.amount)+"</b>"}</td>
           <td class="mono muted">${money(max)}</td>
+          <td><button type="button" class="btn ghost sm ${q.probono?"":""}" data-ppro="${i}"
+              title="${q.probono?"pro bono zurücknehmen":"pro bono – nicht berechnen"}">${q.probono?"pro bono":"⚑"}</button></td>
           <td><button type="button" class="btn ghost sm" data-pdel="${i}">✕</button></td></tr>`;}).join("")}
-      </tbody><tfoot><tr><td colspan="3" class="muted">Gesamtbetrag</td><td class="mono"><b>${money(sum)}</b></td><td colspan="2"></td></tr></tfoot>
+      </tbody><tfoot>${pb?'<tr><td colspan="3" class="muted">davon pro bono</td><td class="mono muted">'+money(pb)+'</td><td colspan="3"></td></tr>':""}
+        <tr><td colspan="3" class="muted">Gesamtbetrag</td><td class="mono"><b>${money(sum)}</b></td><td colspan="3"></td></tr></tfoot>
       </table></div>`:'<div class="box info">Noch keine Posten erfasst.</div>';
     const ty=form.querySelector("#pType").value, r=RAVO[ty];
     form.querySelector("#pQtyLbl").textContent=r.per?"Einheiten à "+r.per+" Min.":"Anzahl";
@@ -2775,6 +2785,8 @@ function mDoc(id,type,preset){
   form.addEventListener("click",e=>{
     const del=e.target.closest("[data-pdel]");
     if(del){posten.splice(+del.dataset.pdel,1);return draw();}
+    const pro=e.target.closest("[data-ppro]");
+    if(pro){const q=posten[+pro.dataset.ppro]; q.probono=!q.probono; return draw();}
     const a=e.target.closest("[data-act]"); if(!a) return;
     const act=a.dataset.act;
     if(act==="genDocRef"){e.preventDefault();form.no.value=makeRef(t.kurz,form.clientId.value);return;}
@@ -2801,7 +2813,7 @@ function mDoc(id,type,preset){
       if(!c){toast("Bitte zuerst ein Verfahren auswählen");return;}
       const neu=caseFees(c,d&&d.id).filter(f=>!posten.some(q=>
         q.type===f.type&&(+q.amount||0)===(+f.amount||0)&&(q.date||"")===(f.date||"")&&(q.desc||"")===(f.desc||"")));
-      neu.forEach(f=>posten.push({type:f.type,qty:f.qty||1,amount:f.amount,date:f.date,desc:f.desc}));
+      neu.forEach(f=>posten.push({type:f.type,qty:f.qty||1,amount:f.amount,date:f.date,desc:f.desc,probono:!!f.probono}));
       if(!neu.length) toast(caseFees(c).length?"Alle Leistungen sind schon in der Rechnung":"Für dieses Verfahren sind keine Leistungen erfasst");
       else {draw(); toast(neu.length+" Position"+(neu.length>1?"en":"")+" übernommen");}
       return;}
@@ -4349,7 +4361,7 @@ document.addEventListener("click",e=>{
         const c=DB.cases.find(x=>x.id===id); if(!c) return;
         closeModal();
         return mDoc(null,"rechnung",{caseId:c.id,clientId:c.clientId,date:today(),
-          posten:caseFees(c).map(f=>({type:f.type,qty:f.qty||1,amount:f.amount,date:f.date,desc:f.desc}))});
+          posten:caseFees(c).map(f=>({type:f.type,qty:f.qty||1,amount:f.amount,date:f.date,desc:f.desc,probono:!!f.probono}))});
       }
       case "openClient": closeModal(); return mClientView(id);
       case "editProfile": return mProfile();
