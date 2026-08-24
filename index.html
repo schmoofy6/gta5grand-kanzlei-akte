@@ -292,6 +292,13 @@ html.modal-offen,html.modal-offen body{overflow:hidden}
 .plist .empty{padding:12px;font-size:13px}
 .videobox{position:relative;padding-top:56.25%;border-radius:11px;overflow:hidden;background:#000;border:1px solid var(--line2)}
 .videobox iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.afrage{display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap;
+  border:1px solid var(--line);border-radius:var(--r-sm);padding:11px 13px;margin-bottom:8px;background:var(--card)}
+.afrage .atext{flex:1;min-width:210px}
+.afrage .t{font-size:13.5px}
+.afrage .s{font-size:11.5px;color:var(--tx3);margin-top:2px}
+.afrage .seg-ctl{flex:0 0 auto}
+.afrage .seg-ctl button{min-width:76px;padding:6px 10px;font-size:12.5px}
 .werbe{display:flex;gap:8px;align-items:flex-start;margin-bottom:8px}
 .werbe textarea{flex:1;min-height:52px;resize:vertical}
 .werbe .row{flex:0 0 auto;flex-direction:column;gap:5px}
@@ -2693,6 +2700,9 @@ function mDoc(id,type,preset){
     draw(); toast("Angaben übernommen");
   };
   draw(); drawWortlaut();
+  /* Neuer Schriftsatz zu einem Verfahren: die Angaben stehen sofort drin.
+     fromCase überschreibt nichts, es füllt nur leere Felder.               */
+  if(!d&&cur.caseId&&DB.cases.some(k=>k.id===cur.caseId)) fromCase();
   form.addEventListener("input",e=>{
     /* Eingaben im Wortlaut nur merken, das Feld bleibt stehen */
     if(e.target.id==="wlText")    eigenerText=e.target.value;
@@ -3034,6 +3044,149 @@ function faellePick(){
          outcomeInfo(c.outcome,c.procedure).short].filter(Boolean).join(" · ")};});
 }
 
+
+
+/* =============================================================================
+   FALL-ASSISTENT
+   Fragt die Umstaende ab, die das Tool nicht ohnehin kennt, prueft sie gegen
+   Bussgeldkatalog und StPO und schreibt die Antworten als Abhandlungsfehler in
+   den Fall zurueck. Am Ende steht der passende Schriftsatz mit gefuellten
+   Feldern - deshalb keine Merkliste, sondern ein Weg mit Ergebnis.
+   ============================================================================= */
+const ASSI_FRAGEN=[
+  {k:"cuff",   f:"Ist die Uhrzeit des Anlegens der Handschellen bekannt und wurde die Abhandlungszeit eingehalten?",
+               s:"25 Minuten, mit gefordertem Anwalt 120 Minuten, 1 Minute Kulanz (§12, §35 Nr. 1 StPO)"},
+  {k:"rights", f:"Wurde die Rechtsbelehrung binnen f\u00fcnf Minuten sinngem\u00e4\u00df verlesen?",
+               s:"§34 StPO, sonst §35 Nr. 2a"},
+  {k:"lawyer", f:"Wurde auf Wunsch ein Anwalt gestellt und wurden f\u00fcnf Anw\u00e4lte angerufen?",
+               s:"§31 Abs. 2 StPO, sonst §35 Nr. 2b"},
+  {k:"reason", f:"Wurde der Verhaftungsgrund auf Anfrage genannt?",
+               s:"§35 Nr. 3 StPO"},
+  {k:"file",   f:"Stehen Datum, Uhrzeit, Paragraf und Gesetzbuchk\u00fcrzel vollst\u00e4ndig in der Akte?",
+               s:"§35 Nr. 4 StPO"}
+];
+/* Zusatzfragen ohne eigenen Fehlerschluessel - sie steuern nur den Rat */
+const ASSI_EXTRA=[
+  {k:"anzeige", f:"Liegt bei Antragsdelikten eine Strafanzeige vor?",  s:"§16 Abs. 1 StPO", nurWenn:c=>catSum(c.charges).hits.some(h=>/Antragsdelikt/i.test(h.info||""))},
+  {k:"sta",     f:"War ein Staatsanwalt oder Richter beteiligt?",      s:"laut Katalog f\u00fcr diesen Vorwurf vorgeschrieben", nurWenn:c=>catSum(c.charges).sta},
+  {k:"fib",     f:"Wurde das FIB hinzugezogen?",                        s:"laut Katalog f\u00fcr diesen Vorwurf vorgeschrieben", nurWenn:c=>catSum(c.charges).fib},
+  {k:"kaution", f:"Wurde eine Kaution angesetzt oder kassiert?",        s:"ab 4 Hafteinheiten ausgeschlossen (§22 Abs. 3 StPO)", nurWenn:c=>(c.final&&c.final.stars||0)>KAUTION_MAX_HE, umgekehrt:1},
+  {k:"bodycam", f:"Liegen Bodycam-Aufnahmen des Vorfalls vor?",         s:"§2 StPO \u2013 Auswertung nur durch StA oder Richter", umgekehrt:1}
+];
+
+function mAssistent(caseId){
+  const c=DB.cases.find(x=>x.id===caseId); if(!c) return;
+  const cl=client(c.clientId), r=catSum(c.charges);
+  const extra=ASSI_EXTRA.filter(q=>!q.nurWenn||q.nurWenn(c));
+  /* Vorbelegung: bereits erfasste Fehler stehen auf "nein" */
+  const stand={};
+  ASSI_FRAGEN.forEach(q=>stand[q.k]=(c.errors&&c.errors[q.k])?"nein":"");
+  extra.forEach(q=>stand[q.k]="");
+  const auto=autoErrors(c);
+
+  const frageHtml=(q,gruppe)=>`<div class="afrage" data-af="${q.k}">
+    <div class="atext"><div class="t">${esc(q.f)}</div><div class="s">${esc(q.s)}</div></div>
+    <div class="seg-ctl plain" data-aseg="${q.k}">
+      <button type="button" data-v="ja">ja</button>
+      <button type="button" data-v="nein">nein</button>
+      <button type="button" data-v="">wei\u00df nicht</button>
+    </div></div>`;
+
+  openModal(`<div class="modal-h"><h3>\U0001f9ed Fall-Assistent</h3>
+      <span class="pill tag">${esc(c.caseNo||"")}${cl?" \u00b7 "+esc(cl.name):""}</span>
+      <button type="button" class="x" data-act="close">\u00d7</button></div>
+    <div class="modal-b">
+      <div class="calc" style="margin-bottom:16px">
+        <div class="line"><b>Vorwurf:</b> <span>${(c.charges||[]).map(esc).join(", ")||"noch keiner erfasst"}</span></div>
+        <div class="line"><b>Zul\u00e4ssig:</b> <span class="mono">${r.hits.length?r.stars+" \u2b50 \u00b7 "+money(r.fine):"\u2013"}</span>
+          <span class="muted">|</span><b>verh\u00e4ngt:</b>
+          <span class="mono ${auto.penalty?"bad-tx":""}">${(c.final&&c.final.stars)||0} \u2b50 \u00b7 ${money(c.final&&c.final.fine)}</span></div>
+        ${auto.penalty?'<div class="box bad">'+esc(auto.penalty)+'</div>':""}
+        ${r.conflicts.length?'<div class="box bad">Ausschluss bei derselben Tat: '+r.conflicts.map(esc).join("; ")+'</div>':""}
+        ${auto.qualif?'<div class="box bad">'+esc(auto.qualif)+'</div>':""}
+      </div>
+      <div class="sec-title" style="margin-top:0">Abhandlung</div>
+      ${ASSI_FRAGEN.map(q=>frageHtml(q)).join("")}
+      ${extra.length?'<div class="sec-title">Weitere Umst\u00e4nde</div>'+extra.map(q=>frageHtml(q)).join(""):""}
+      <div id="assiErgebnis"></div>
+    </div>
+    <div class="modal-f">
+      <button type="button" class="btn primary" data-act="assiAus">Auswerten</button>
+      <button type="button" class="btn ghost" data-act="close">Schlie\u00dfen</button>
+    </div>`);
+
+  const host=document.querySelector(".modal");
+  /* Vorbelegung anzeigen */
+  Object.entries(stand).forEach(([k,v])=>{
+    if(v==="") return;
+    const b=host.querySelector('[data-aseg="'+k+'"] button[data-v="'+v+'"]'); if(b) b.classList.add("on");
+  });
+
+  host.addEventListener("click",e=>{
+    const b=e.target.closest("[data-aseg] button");
+    if(b){
+      const g=b.closest("[data-aseg]");
+      g.querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));
+      stand[g.dataset.aseg]=b.dataset.v;
+      return;
+    }
+    const a=e.target.closest("[data-act]");
+    if(!a||a.dataset.act!=="assiAus") return;
+    e.preventDefault();
+    auswerten();
+  });
+
+  function auswerten(){
+    /* Antworten in Fehler uebersetzen: "nein" bedeutet Verstoss */
+    const errs=Object.assign({},c.errors);
+    ASSI_FRAGEN.forEach(q=>{
+      if(stand[q.k]==="nein") errs[q.k]=true;
+      else if(stand[q.k]==="ja") delete errs[q.k];
+    });
+    c.errors=errs; save();
+
+    const gefunden=allErrors(c);
+    const liste=Object.entries(gefunden).map(([k,v])=>{
+      const f=FEHLER.find(x=>x.k===k)||{t:k,s:""};
+      return {t:f.t,s:f.s,txt:v&&v.txt||""};
+    });
+    /* Rat aus den Zusatzfragen */
+    const hinweise=[];
+    if(stand.anzeige==="nein") hinweise.push("Antragsdelikt ohne Strafanzeige \u2013 ohne Antrag des Gesch\u00e4digten keine Verfolgung (\u00a716 Abs. 1 StPO).");
+    if(stand.sta==="nein")     hinweise.push("Der Katalog schreibt f\u00fcr diesen Vorwurf die \u00dcbergabe an die Staatsanwaltschaft vor; sie ist unterblieben.");
+    if(stand.fib==="nein")     hinweise.push("Der Katalog schreibt die Hinzuziehung des FIB vor; sie ist unterblieben.");
+    if(stand.kaution==="ja")   hinweise.push("Bei mehr als "+KAUTION_MAX_HE+" Hafteinheiten ist eine Kaution nach \u00a722 Abs. 3 StPO ausgeschlossen.");
+    if(stand.bodycam==="nein") hinweise.push("Ohne Bodycam fehlt der objektive Nachweis; die Aussage der Beamten steht allein.");
+    if(stand.bodycam==="ja")   hinweise.push("Bodycam anfordern \u2013 die Auswertung durch Exekutivbeamte ist nach \u00a72 StPO unzul\u00e4ssig.");
+
+    const rv=revisionStatus(c), fristOffen=rv.s==="open";
+    const box=document.getElementById("assiErgebnis");
+    box.innerHTML=`
+      <div class="sec-title">Befund</div>
+      ${liste.length
+        ? '<div class="box bad"><b>'+liste.length+' Abhandlungsfehler nach \u00a735 StPO</b> \u2013 der Beschuldigte ist freizusprechen und freizulassen.'
+          +liste.map(x=>'<div style="margin-top:6px">\u2022 '+esc(x.t)+' <span style="opacity:.85">('+esc(x.s)+')</span>'
+            +(x.txt?'<br><span style="opacity:.9">'+esc(x.txt)+'</span>':"")+'</div>').join("")+'</div>'
+        : '<div class="box ok">Kein Abhandlungsfehler feststellbar. Der Angriff muss \u00fcber den Tatvorwurf selbst oder die Beweislage laufen.</div>'}
+      ${hinweise.length?'<div class="box warn">'+hinweise.map(esc).join("<br>")+'</div>':""}
+      <div class="sec-title">Empfehlung</div>
+      <div class="box info">${
+        liste.length
+          ? (fristOffen
+              ? "Revisionsantrag stellen \u2013 die Frist nach \u00a741 Abs. 1 StPO l\u00e4uft noch. Vorher Akteneinsicht beantragen, wenn die Akte noch nicht vorliegt."
+              : "Die Revisionsfrist ist abgelaufen oder die Revision l\u00e4uft bereits. In Betracht kommen Begnadigungsgesuch (Art. 9 SVerfG) und, nach Freispruch, L\u00f6schung der Strafakte (\u00a719 Abs. 4 StPO).")
+          : "Zun\u00e4chst Akteneinsicht nach \u00a736 Abs. 1 StPO beantragen und die Beweislage pr\u00fcfen. Ohne objektiven Nachweis tr\u00e4gt der Vorwurf nicht."
+      }</div>
+      <div class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+        <button type="button" class="btn" data-act="newDocFor" data-id="${c.id}" data-tpl="akte">\U0001f4c2 Akteneinsicht</button>
+        <button type="button" class="btn ${liste.length&&fristOffen?"primary":""}" data-act="newRevision" data-id="${c.id}">\u2696\ufe0f Revisionsantrag</button>
+        <button type="button" class="btn" data-act="newDocFor" data-id="${c.id}" data-tpl="dienstaufsicht">\U0001f6a8 Dienstaufsichtsbeschwerde</button>
+      </div>
+      <div class="hint">Die Antworten sind im Fall gespeichert; der Schriftsatz \u00fcbernimmt sie als Revisionsgr\u00fcnde.</div>`;
+    box.scrollIntoView({block:"nearest"});
+    render();
+  }
+}
 
 /* =============================================================================
    Werbesprueche - eigene Zeilen zum Herauskopieren, sonst ohne Funktion
@@ -3869,6 +4022,7 @@ function mCaseView(id){
     </div>
     <div class="modal-f"><button class="btn primary" data-act="editCase" data-id="${c.id}">Bearbeiten</button>
       ${cl?'<button class="btn" data-act="openClient" data-id="'+cl.id+'">Mandantenakte</button>':""}
+      <button class="btn" data-act="assistent" data-id="${c.id}">🧭 Assistent</button>
       <button class="btn" data-act="newDocFor" data-id="${c.id}" data-tpl="akte">📂 Akteneinsicht</button>
       <button class="btn" data-act="newRevision" data-id="${c.id}">⚖️ Revisionsantrag</button>
       <button class="btn" data-act="newInvoice" data-id="${c.id}">🧾 Rechnung</button>
@@ -4216,6 +4370,7 @@ document.addEventListener("click",e=>{
         if(document.querySelector(".modal")){ closeModal(); mDocView(dp.id); }
         return toast(dp.paid?"Als bezahlt vermerkt":"Wieder als offen vermerkt");
       }
+      case "assistent": closeModal(); return mAssistent(id);
       case "newDocFor": {
         const c=DB.cases.find(x=>x.id===id); if(!c) return;
         closeModal();
