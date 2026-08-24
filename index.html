@@ -2219,7 +2219,6 @@ function vDocs(){
     <div class="sub">${tplKeys().length} Vorlagen · Anträge, Gesuche, Beschwerden und Rechnungen</div></div>
     <div class="spacer"></div>
     <button class="btn" data-act="tplList">✎ Vorlagen bearbeiten</button>
-    <button class="btn" data-act="assistent">🧭 Assistent</button>
     <button class="btn primary" data-act="pickDoc">＋ Neuer Schriftsatz</button></header>
   <div class="kpis">
     <div class="kpi acc"><div class="lbl">Schriftsätze</div><div class="val">${DB.docs.length}</div><div class="sub">${zahl("entwurf")} in Arbeit</div></div>
@@ -2259,8 +2258,7 @@ function vDocs(){
       </tr>`;}).join("")}
     </tbody></table></div>`
   :`<div class="card empty"><div class="big">📄</div>Noch kein Schriftsatz angelegt.<br>
-     <button class="btn primary" style="margin-top:14px" data-act="assistent">🧭 Assistent starten</button>
-     <button class="btn" style="margin-top:14px" data-act="pickDoc">Vorlage auswählen</button></div>`}
+     <button class="btn primary" style="margin-top:14px" data-act="pickDoc">Vorlage auswählen</button></div>`}
   <div class="sec-title">Welcher Schriftsatz wann</div>
   ${vorlagenRaster()}`;
 }
@@ -3101,22 +3099,6 @@ function faellePick(){
    was noch fehlt, und erzeugt daraus den fertig ausgefuellten Schriftsatz.
    Ohne Netz und ohne Sprachmodell - erkannt wird ueber Stichworte.
    ============================================================================= */
-const ASSI_TPL=[
-  {k:"revision",     w:["revision","widerspruch","anfechten","zu hoch","falsch bestraft","abhandlungsfehler",
-                        "freispruch","handschellen","belehrung","zu viel","unrechtm\u00e4\u00dfig","fehlerhaft","35 stpo"]},
-  {k:"akte",         w:["akteneinsicht","einsicht","unterlagen","bodycam anfordern","akte sehen","akte anfordern"]},
-  {k:"entschaedigung",w:["entsch\u00e4digung","erstattung","schadenersatz","geld zur\u00fcck","dienstausfall"]},
-  {k:"loeschung",    w:["l\u00f6schung","l\u00f6schen","strafakte weg","eintrag entfernen","verj\u00e4hrt","vorstrafe weg"]},
-  {k:"gnade",        w:["begnadigung","gnade","gouverneur","gnadengesuch"]},
-  {k:"dienstaufsicht",w:["dienstaufsicht","beschwerde","verhalten des beamten","unfreundlich","schikane","korrupt"]},
-  {k:"anzeige",      w:["anzeige","strafantrag","anzeigen","gesch\u00e4digt","bestohlen","betrogen","nicht bezahlt","51 stgb"]},
-  {k:"einstweilig",  w:["einstweilige","bel\u00e4stigt","bedroht","stalking","kontaktverbot","n\u00e4herungsverbot","verfolgt"]},
-  {k:"familie",      w:["familie","familienlizenz","heirat","hochzeit","gr\u00fcnden einer familie"]},
-  {k:"unternehmen",  w:["unternehmen","firma","gewerbe","betrieb","dachgesellschaft","marke","gr\u00fcnden"]},
-  {k:"vollmacht",    w:["vollmacht","vertretung","bevollm\u00e4chtig"]},
-  {k:"rechnung",     w:["rechnung","honorar","abrechnen","geb\u00fchr","bezahlen","kosten stellen"]}
-];
-/* Stichworte, die einen Abhandlungsfehler nahelegen */
 /* Themenworte je Abhandlungsfehler. Erkannt wird satzweise: Thema getroffen und
    im selben Satz eine Verneinung oder ein Wort, das den Fehler benennt.      */
 const ASSI_FEHLER=[
@@ -3131,9 +3113,6 @@ const ASSI_NEIN=/\b(kein|keine|keinen|keiner|keinem|nicht|nichts|ohne|weder|niem
 const ASSI_SAETZE=t=>String(t||"").split(/[.;!?\n]+/).map(x=>x.trim()).filter(Boolean);
 
 function assiLesen(txt,c){
-  const t=" "+String(txt||"").toLowerCase().replace(/\s+/g," ")+" ";
-  const punkte=k=>ASSI_TPL.find(x=>x.k===k).w.reduce((n,w)=>n+(t.includes(w)?1:0),0);
-  const rang=ASSI_TPL.map(x=>({k:x.k,n:punkte(x.k)})).sort((a,b)=>b.n-a.n);
   /* Paragraphen aus dem Text mit dem Katalog abgleichen */
   const buecher=["stgb","stpo","waffg","btmg","stvo","bgb","bdg","sverfg","ravo"];
   const vorwuerfe=[];
@@ -3160,8 +3139,6 @@ function assiLesen(txt,c){
     });
   });
   return {
-    tpl: rang[0].n?rang[0].k:"",
-    treffer: rang.filter(x=>x.n).slice(0,3),
     vorwuerfe,
     uhrzeit: (/(\b[0-2]?\d:[0-5]\d)\b/.exec(txt||"")||[])[1]||"",
     datum:   (()=>{const m=/(\d{1,2})\.(\d{1,2})\.(\d{4})/.exec(txt||"");
@@ -3237,22 +3214,16 @@ function assiFelder(tpl,ctx){
   return F[tpl]||{};
 }
 
-/* Welche Pflichtfelder bleiben nach dem Lesen offen? */
-function assiOffen(tpl,werte){
-  const t=tplOf(tpl)||{};
-  return (t.fields||[]).filter(f=>f.req&&f.t!=="check"&&f.t!=="posten"&&!String(werte[f.k]||"").trim());
-}
-
 
 /* Was der Assistent je Vorlage wissen will - steht als Beispiel im Textfeld */
 const ASSI_HILFE={
   revision:      "Wegen \u00a728 StGB festgenommen. Handschellen um 20:14, die Abhandlung dauerte \u00fcber eine Stunde. Anwalt verlangt, es wurde keiner angerufen. Verh\u00e4ngt 3 Wanteds und 60.000 $. Keine Bodycam.",
-  akte:          "Es geht um die Strafakte vom 21.08. wegen \u00a728 StGB. Ich brauche die Bodycam der SAHP und den Einsatzbericht.",
+  akte:          "Es geht um die Strafakte vom 21.08.2026 wegen \u00a728 StGB. Ich brauche die Bodycam der SAHP und den Einsatzbericht.",
   entschaedigung:"Nach erfolgreicher Revision waren 3 Hafteinheiten abgesessen, dazu 60.000 $ Geldstrafe und 2 Tage Dienstausfall.",
-  loeschung:     "Der Eintrag vom 10.08. ist verj\u00e4hrt, die Tat liegt \u00fcber 14 Tage zur\u00fcck.",
+  loeschung:     "Der Eintrag vom 10.08.2026 ist verj\u00e4hrt, die Tat liegt \u00fcber 14 Tage zur\u00fcck.",
   gnade:         "Die Revisionsfrist ist abgelaufen. Mein Mandant ist Ersttäter und hat den Schaden ersetzt.",
-  dienstaufsicht:"Beamter Mike Ravioli vom LSPD hat meinen Mandanten ohne Grund durchsucht und dabei beleidigt.",
-  anzeige:       "Am 21.08. gegen 19:00 hat T\u00e4ter Max Mustermann meinem Mandanten am Legion Square das Fahrzeug entwendet.",
+  dienstaufsicht:"Beamter Mike Ravioli vom LSPD hat meinen Mandanten am 21.08.2026 gegen 19:00 ohne Grund durchsucht und dabei beleidigt.",
+  anzeige:       "Am 21.08.2026 gegen 19:00 hat T\u00e4ter Max Mustermann meinem Mandanten das Fahrzeug entwendet.",
   einstweilig:   "Gegner Max Mustermann verfolgt meine Mandantin seit drei Tagen und hat sie zweimal bedroht.",
   familie:       "Familie Moncler, Hausnummer 12.",
   unternehmen:   "Firma Cypress & Coast Group, Dachgesellschaft f\u00fcr Handwerksbetriebe, Hausnummer 12.",
@@ -3278,113 +3249,7 @@ function assiDetails(txt){
 function assiWerte(tpl,txt,c){
   const fund=assiLesen(txt,c), det=assiDetails(txt);
   if(c&&Object.keys(fund.fehler).length){ c.errors=Object.assign({},c.errors,fund.fehler); save(); }
-  return {fund,det,werte:Object.assign({},assiFelder(tpl,{txt,c,fund,antw:{}}),{
-    beamter:det.beamter, behoerde:det.behoerde||(c&&c.agency)||"",
-    familyName:det.familyName, houseNo:det.haus, firma:det.firma,
-    taeter:det.person, gegner:det.person, tage:det.tage, tatort:det.ort,
-    sitz:det.haus?"Hausnummer "+det.haus:"", tatzeit:fund.datum||(c&&c.date)||""
-  })};
-}
-
-function mAssistent(preset){
-  let schritt=1, fund=null, tpl="", antw={}, cid=(preset&&preset.clientId)||"", kid=(preset&&preset.caseId)||"";
-  const zeichne=()=>{
-    const host=document.getElementById("assiBody"); if(!host) return;
-    if(schritt===1){
-      host.innerHTML=`
-        <label class="f"><span>Was ist passiert? *</span>
-          <textarea id="assiTxt" rows="7" placeholder="Zum Beispiel: Mein Mandant wurde gestern wegen §28 StGB festgenommen. Die Handschellen waren um 20:14 an, die Abhandlung dauerte über eine Stunde. Einen Anwalt hat er verlangt, es wurde aber keiner angerufen. Verhängt wurden 3 Wanteds und 60.000 $.">${esc(antw._txt||"")}</textarea>
-          <div class="hint">Schreib es so, wie du es einem Kollegen erz\u00e4hlen w\u00fcrdest. Paragraphen, Uhrzeiten und Betr\u00e4ge werden erkannt.</div></label>
-        <div class="f-row">
-          ${pickerField("assiClient","Mandantschaft",mandantenPick(),cid,"Name, Reisepass oder Telefon \u2026")}
-          ${pickerField("assiCase","Verfahren (optional)",faellePick(),kid,"Fallnummer oder Mandant \u2026")}
-        </div>`;
-      return;
-    }
-    const c=kid?DB.cases.find(x=>x.id===kid):null;
-    const werte=assiFelder(tpl,{txt:antw._txt,c,fund,antw});
-    const offen=assiOffen(tpl,werte);
-    host.innerHTML=`
-      <div class="calc">
-        <div class="line"><b>Erkannt:</b>
-          ${fund.treffer.map(x=>'<span class="pill '+(x.k===tpl?"ok":"tag")+'">'+esc((tplOf(x.k)||{}).lbl||x.k)+'</span>').join("")||'<span class="muted">nichts Eindeutiges</span>'}</div>
-        ${fund.vorwuerfe.length?'<div class="line"><b>Vorw\u00fcrfe:</b> '+fund.vorwuerfe.map(v=>{
-            const e=catFind(v); return '<span class="pill tag" title="'+esc(v)+'">'+esc(e?e.b+" "+e.p:v)+'</span>';
-          }).join("")+'</div>':""}
-        ${Object.keys(fund.fehler).length?'<div class="line"><b>M\u00f6gliche Fehler:</b> '+Object.keys(fund.fehler).map(k=>{
-            const f=FEHLER.find(x=>x.k===k); return '<span class="pill bad">'+esc(f?f.t:k)+'</span>';}).join("")+'</div>':""}
-        ${[fund.uhrzeit?"Uhrzeit "+fund.uhrzeit:"",fund.datum?"Datum "+dateDE(fund.datum):"",
-           fund.betrag?"Betrag "+money(fund.betrag):"",fund.wanteds?fund.wanteds+" Hafteinheiten":""]
-          .filter(Boolean).map(x=>'<span class="pill tag">'+esc(x)+'</span>').join("")}
-      </div>
-      <label class="f"><span>Schriftsatz</span>
-        <select id="assiTpl">${tplKeys().map(k=>'<option value="'+k+'"'+(k===tpl?" selected":"")+'>'+
-          esc((tplOf(k)||{}).ico||"")+" "+esc((tplOf(k)||{}).lbl||k)+'</option>').join("")}</select></label>
-      ${offen.length?'<div class="sec-title">Dazu brauche ich noch</div>'+offen.map(f=>`
-        <label class="f"><span>${esc(f.l)}</span>
-          ${f.t==="area"?'<textarea data-aq="'+f.k+'" rows="3" placeholder="'+esc(f.hint||"")+'">'+esc(antw[f.k]||"")+'</textarea>'
-            :f.t==="select"?'<select data-aq="'+f.k+'"><option value="">\u2013 w\u00e4hlen \u2013</option>'+
-              (f.opts||[]).map(o=>'<option'+((antw[f.k]||"")===o?" selected":"")+'>'+esc(o)+'</option>').join("")+'</select>'
-            :f.t==="date"?'<input type="date" data-aq="'+f.k+'" value="'+esc(antw[f.k]||"")+'">'
-            :'<input type="text" data-aq="'+f.k+'" value="'+esc(antw[f.k]||"")+'" placeholder="'+esc(f.hint||"")+'">'}
-          ${f.hint&&f.t!=="text"?'<div class="hint">'+esc(f.hint)+'</div>':""}</label>`).join("")
-        :'<div class="box ok">Alle Pflichtangaben sind beisammen.</div>'}
-      ${!kid&&(tplOf(tpl)||{}).caseRef?'<div class="box warn">Diese Vorlage bezieht sich auf ein Verfahren. Ohne Verfahren bleiben Fallnummer, Beamte und Strafma\u00df leer.</div>':""}`;
-  };
-
-  openModal(`<div class="modal-h"><h3>\U0001f9ed Schriftsatz-Assistent</h3>
-      <span class="pill tag" id="assiSchritt">Schritt 1 von 2</span>
-      <button type="button" class="x" data-act="close">\u00d7</button></div>
-    <div class="modal-b"><div id="assiBody"></div></div>
-    <div class="modal-f">
-      <button type="button" class="btn primary" data-act="assiWeiter">Weiter</button>
-      <button type="button" class="btn" data-act="assiZurueck" hidden>Zur\u00fcck</button>
-      <button type="button" class="btn ghost" data-act="close">Abbrechen</button>
-    </div>`);
-  zeichne();
-
-  const host=document.querySelector(".modal");
-  host.addEventListener("input",e=>{
-    if(e.target.id==="assiTxt") antw._txt=e.target.value;
-    const q=e.target.dataset&&e.target.dataset.aq; if(q) antw[q]=e.target.value;
-  });
-  host.addEventListener("change",e=>{
-    if(e.target.id==="assiTpl"){ tpl=e.target.value; zeichne(); }
-    const n=e.target.name;
-    if(n==="assiClient"){ cid=e.target.value; }
-    if(n==="assiCase"){ kid=e.target.value; const c=DB.cases.find(x=>x.id===kid); if(c&&!cid) cid=c.clientId; }
-    const q=e.target.dataset&&e.target.dataset.aq; if(q) antw[q]=e.target.value;
-  });
-  host.addEventListener("click",e=>{
-    const a=e.target.closest("[data-act]"); if(!a) return;
-    if(a.dataset.act==="assiZurueck"){ schritt=1; zeichne(); stand(); return; }
-    if(a.dataset.act!=="assiWeiter") return;
-    e.preventDefault();
-    if(schritt===1){
-      const t=(antw._txt||"").trim();
-      if(!t){ toast("Bitte die Situation kurz schildern"); return; }
-      const c=kid?DB.cases.find(x=>x.id===kid):null;
-      fund=assiLesen(t,c);
-      tpl=fund.tpl||"revision";
-      /* erkannte Fehler in den Fall schreiben, damit die Gr\u00fcnde stimmen */
-      if(c&&Object.keys(fund.fehler).length){ c.errors=Object.assign({},c.errors,fund.fehler); save(); }
-      schritt=2; zeichne(); stand(); return;
-    }
-    /* Schritt 2: erzeugen */
-    const c=kid?DB.cases.find(x=>x.id===kid):null;
-    const werte=assiFelder(tpl,{txt:antw._txt,c,fund,antw});
-    const offen=assiOffen(tpl,werte);
-    if(offen.length){ toast("Bitte noch: "+offen.map(f=>f.l).join(", ")); return; }
-    closeModal();
-    mDoc(null,tpl,Object.assign({clientId:cid,caseId:kid,date:today()},werte));
-    toast("Schriftsatz vorbereitet \u2013 bitte pr\u00fcfen");
-  });
-  function stand(){
-    host.querySelector("#assiSchritt").textContent="Schritt "+schritt+" von 2";
-    host.querySelector('[data-act="assiWeiter"]').textContent=schritt===1?"Weiter":"Schriftsatz erzeugen";
-    host.querySelector('[data-act="assiZurueck"]').hidden=schritt===1;
-  }
-  stand();
+  return {fund,det,werte:assiFelder(tpl,{txt,c,fund,antw:{}})};
 }
 
 /* =============================================================================
@@ -4221,7 +4086,6 @@ function mCaseView(id){
     </div>
     <div class="modal-f"><button class="btn primary" data-act="editCase" data-id="${c.id}">Bearbeiten</button>
       ${cl?'<button class="btn" data-act="openClient" data-id="'+cl.id+'">Mandantenakte</button>':""}
-      <button class="btn" data-act="assistent" data-id="${c.id}">🧭 Assistent</button>
       <button class="btn" data-act="newDocFor" data-id="${c.id}" data-tpl="akte">📂 Akteneinsicht</button>
       <button class="btn" data-act="newRevision" data-id="${c.id}">⚖️ Revisionsantrag</button>
       <button class="btn" data-act="newInvoice" data-id="${c.id}">🧾 Rechnung</button>
@@ -4569,7 +4433,6 @@ document.addEventListener("click",e=>{
         if(document.querySelector(".modal")){ closeModal(); mDocView(dp.id); }
         return toast(dp.paid?"Als bezahlt vermerkt":"Wieder als offen vermerkt");
       }
-      case "assistent": closeModal(); return mAssistent(a.dataset.id?{caseId:a.dataset.id}:null);
       case "newDocFor": {
         const c=DB.cases.find(x=>x.id===id); if(!c) return;
         closeModal();
