@@ -1891,7 +1891,7 @@ function tplWerte(t,d,x){
     verhaengt:c.final?((c.final.stars||0)+" Hafteinheiten und "+money(c.final.fine)):"",
     zulaessig:r&&r.hits.length?(r.stars+" Hafteinheiten und "+money(r.fine)):"",
     entschaedigung:c.id?money(entschaedigung(c)):"",
-    gebuehr:d.probono?"pro bono – nicht berechnet":(d.fee?money(d.fee):""),
+    gebuehr:d.probono?money(0):(d.fee?money(d.fee):""),
     faellig:d.zahlbar?"bis zum "+dateDE(d.zahlbar):"sofort",
     /* Pflichtverteidigung: steuert Empf\u00e4nger, Anrede und Textbausteine */
     pflicht:"", privat:"ja", rechnungsart:"Rechnung", bestellung:"",
@@ -2039,17 +2039,16 @@ function tplBlock(zeile,d,x,v){
   m=/^\{tabelle:(\w+)\}$/.exec(zeile);
   if(m==null) return null;
   if(m[1]==="posten"){
-    const ps=Array.isArray(d.posten)?d.posten:[];
-    /* Pro bono erbrachte Posten werden ausgewiesen, aber nicht berechnet */
-    const sum=ps.reduce((a,q)=>a+(q.probono?0:(+q.amount||0)),0);
-    const pb=ps.filter(q=>q.probono).reduce((a,q)=>a+(+q.amount||0),0);
-    const zeilen=ps.length?ps.map(q=>{const rr=RAVO[q.type]||{lbl:q.type,per:0};
+    /* Pro bono ist eine interne Notiz: solche Posten werden nicht berechnet
+       und stehen daher gar nicht erst auf der Rechnung.                     */
+    const ps=(Array.isArray(d.posten)?d.posten:[]).filter(q=>!q.probono);
+    const sum=ps.reduce((a,q)=>a+(+q.amount||0),0);
+    return tblHtml(["Datum","Leistung","Umfang","Betrag"],
+      ps.length?ps.map(q=>{const rr=RAVO[q.type]||{lbl:q.type,per:0};
         return [q.date?dateDE(q.date):"—",rr.lbl+(q.desc?" – "+q.desc:""),
-                rr.per?((q.qty||1)+" × "+rr.per+" Min."):"Pauschale",
-                q.probono?"pro bono":money(q.amount)];})
-       :[["—","keine Posten erfasst","—","—"]];
-    if(pb) zeilen.push(["","davon pro bono erbracht und nicht berechnet","",money(pb)]);
-    return tblHtml(["Datum","Leistung","Umfang","Betrag"],zeilen,["","","Gesamtbetrag",money(sum)]);
+                rr.per?((q.qty||1)+" × "+rr.per+" Min."):"Pauschale",money(q.amount)];})
+       :[["—","keine berechenbaren Posten erfasst","—","—"]],
+      ["","","Gesamtbetrag",money(sum)]);
   }
   /* Kurzer Steckbrief des Verfahrens - damit die Justiz sieht, wofuer
      abgerechnet wird, ohne die Akte danebenlegen zu muessen.            */
@@ -2201,9 +2200,7 @@ function docHtml(d){
     </div>
     <div class="fuss">
       Rechtsgrundlage: ${esc(t.ref||"—")}.${t.frist?" Frist: "+esc(t.frist)+".":""}
-      ${t.noFee?"":" Gebühr für diesen Schriftsatz: "+
-        (d.probono?"pro bono – nicht berechnet"+(d.fee?" (Wert "+money(d.fee)+")":"")
-                  :(d.fee?money(d.fee):"—"))+
+      ${t.noFee?"":" Gebühr für diesen Schriftsatz: "+(d.probono?money(0):(d.fee?money(d.fee):"—"))+
         " (Höchstsatz "+money(ravoMaxOf(t.fee))+" nach "+esc(RAVO[t.fee].ref)+")."}
       ${kopf.length?" · "+esc(kopf[0]):""}
     </div>
@@ -2715,10 +2712,10 @@ function mDoc(id,type,preset){
           <td class="mono">${r.per?(q.qty||1)+" × "+r.per+" Min.":"Pauschale"}</td>
           <td class="mono ${ue&&!q.probono?"bad-tx":""} ${q.probono?"muted":""}">${q.probono?"<s>"+money(q.amount)+"</s>":"<b>"+money(q.amount)+"</b>"}</td>
           <td class="mono muted">${money(max)}</td>
-          <td><button type="button" class="btn ghost sm ${q.probono?"":""}" data-ppro="${i}"
-              title="${q.probono?"pro bono zurücknehmen":"pro bono – nicht berechnen"}">${q.probono?"pro bono":"⚑"}</button></td>
+          <td><button type="button" class="btn ghost sm" data-ppro="${i}"
+              title="${q.probono?"pro bono zurücknehmen":"pro bono – nicht berechnen, erscheint nicht auf der Rechnung"}">${q.probono?"pro bono":"⚑"}</button></td>
           <td><button type="button" class="btn ghost sm" data-pdel="${i}">✕</button></td></tr>`;}).join("")}
-      </tbody><tfoot>${pb?'<tr><td colspan="3" class="muted">davon pro bono</td><td class="mono muted">'+money(pb)+'</td><td colspan="3"></td></tr>':""}
+      </tbody><tfoot>${pb?'<tr><td colspan="3" class="muted">pro bono – steht nicht auf der Rechnung</td><td class="mono muted">'+money(pb)+'</td><td colspan="3"></td></tr>':""}
         <tr><td colspan="3" class="muted">Gesamtbetrag</td><td class="mono"><b>${money(sum)}</b></td><td colspan="3"></td></tr></tfoot>
       </table></div>`:'<div class="box info">Noch keine Posten erfasst.</div>';
     const ty=form.querySelector("#pType").value, r=RAVO[ty];
