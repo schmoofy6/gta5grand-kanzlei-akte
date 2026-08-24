@@ -982,7 +982,10 @@ function rechnungPosten(r){
 }
 /* Wie eine Gebuehr in Listen dargestellt wird */
 function gebuehrMarke(d){
-  if(!(+d.fee)) return '<span class="muted">–</span>';
+  /* Pro bono steht immer \u2013 auch ohne Betrag, denn pro bono ist kostenfrei */
+  if(d.probono)
+    return '<button type="button" class="pill tag" data-act="docProBono" data-id="'+d.id+'" title="pro bono \u2013 kostenfrei, zur\u00fccknehmen">pro bono</button>';
+  if(!(+d.fee)) return '<span class="muted">\u2013</span>';
   if(d.type==="rechnung"){
     const w=rechnungStand(d);
     if(d.status==="rejected")
@@ -992,10 +995,11 @@ function gebuehrMarke(d){
     if(w.hat>=w.soll&&w.soll>0) return money(w.soll)+' <span class="pill ok">bezahlt</span>';
     return money(w.soll)+' <button type="button" class="pill bad" data-act="docPaid" data-id="'+d.id+'" title="als bezahlt markieren">offen</button>';
   }
-  if(d.probono) return money(d.fee)+' <button type="button" class="pill tag" data-act="docProBono" data-id="'+d.id+'" title="pro bono \u2013 nicht berechnet, zur\u00fccknehmen">pro bono</button>';
   if(d.paid) return money(d.fee)+' <span class="pill ok">bezahlt</span>';
   if(d.abgeschrieben) return money(d.fee)+' <span class="pill neutral" title="erledigt, aber nicht erhalten">abgeschrieben</span>';
-  return money(d.fee)+' <button type="button" class="pill bad" data-act="docPaid" data-id="'+d.id+'" title="als bezahlt markieren">offen</button>';
+  return money(d.fee)
+    +' <button type="button" class="pill bad" data-act="docPaid" data-id="'+d.id+'" title="als bezahlt markieren">offen</button>'
+    +' <button type="button" class="pill tag" data-act="docProBono" data-id="'+d.id+'" title="kostenfrei – pro bono">pro bono</button>';
 }
 const rechnungSumme=r=>(Array.isArray(r.posten)?r.posten:[]).reduce((a,q)=>a+(+q.amount||0),0);
 /* zustand: "bezahlt" | "abgeschrieben" | "offen" */
@@ -1148,7 +1152,7 @@ const feeTotal=c=>summe(caseFees(c));
 const feeOpen =c=>summe(caseFees(c).filter(f=>!f.paid&&!f.abgeschrieben&&!f.probono));
 /* Pro bono: bewusst nicht berechnet. Nach \u00a74 RAVO sind die S\u00e4tze H\u00f6chstbetr\u00e4ge,
    weniger ist immer zul\u00e4ssig. Die Leistung bleibt dokumentiert (\u00a73 V RAVO).   */
-const feeProBono=c=>summe(caseFees(c).filter(f=>f.probono));
+const feeProBono=c=>caseFees(c).filter(f=>f.probono).length;
 /* Positionen, die über dem RAVO-Höchstbetrag liegen (§4 III: unwirksam) */
 
 /* --- Fehlerprüfung §35 StPO: automatisch erkannte Punkte --- */
@@ -2626,13 +2630,13 @@ function mDoc(id,type,preset){
           <div class="hint">Zahlt das GOV nur einen Teil, trag den erhaltenen Betrag ein. Der Rest wird als Ausfall geführt.</div></label>`:`
       <div class="f-row three" style="margin-top:10px">
         <label class="f"><span>Gebühr ($)</span>
-          <div style="display:flex;gap:6px"><input type="number" name="fee" min="0" step="1000" value="${cur.fee??""}">
-          <button type="button" class="btn sm" data-act="docFeeMax">max</button></div></label>
+          <div style="display:flex;gap:6px"><input type="number" name="fee" min="0" step="1000" value="${cur.probono?0:(cur.fee??"")}" ${cur.probono?"disabled":""}>
+          <button type="button" class="btn sm" data-act="docFeeMax" ${cur.probono?"disabled":""}>max</button></div></label>
         <label class="f" style="align-self:end"><span>&nbsp;</span>
           <label class="chk" style="margin:0 0 6px"><input type="checkbox" name="paid" ${cur.paid?"checked":""}>
             <div><div class="t">bezahlt</div></div></label>
           <label class="chk" style="margin:0"><input type="checkbox" name="probono" ${cur.probono?"checked":""}>
-            <div><div class="t">pro bono</div></div></label></label>
+            <div><div class="t">pro bono</div><div class="s">kostenfrei – dann keine Gebühr</div></div></label></label>
         <div class="f"><span style="display:block;font-size:12px;color:var(--tx2);margin-bottom:5px">Höchstsatz</span>
           <div class="mono" style="padding:8px 0"><b>${money(ravoMaxOf(t.fee))}</b>
             <a href="#" data-act="editRavo" class="muted" style="font-size:12px">ändern</a></div></div>
@@ -2654,7 +2658,9 @@ function mDoc(id,type,preset){
     const o={id:d?d.id:undefined,type:tp,no:form.no.value,date:form.date.value,status:form.status.value,
       clientId:form.clientId.value,extName:form.extName.value,extPass:form.extPass.value,extPhone:form.extPhone.value,
       caseId:form.caseId.value,
-      fee:form.fee?(+form.fee.value||0):0,paid:form.paid?form.paid.checked:false,note:form.note.value,posten,
+      fee:(form.probono&&form.probono.checked)?0:(form.fee?(+form.fee.value||0):0),
+      paid:(form.probono&&form.probono.checked)?false:(form.paid?form.paid.checked:false),
+      note:form.note.value,posten,
       erhalten:form.erhalten?form.erhalten.value:(cur.erhalten??""),
       probono:form.probono?form.probono.checked:!!cur.probono,
       rueck:form.rueck?form.rueck.value:(cur.rueck||"")};
@@ -2703,19 +2709,19 @@ function mDoc(id,type,preset){
   const drawPosten=()=>{
     const box=form.querySelector("#postenBox"); if(!box) return;
     const sum=posten.reduce((a,q)=>a+(q.probono?0:(+q.amount||0)),0);
-    const pb=posten.filter(q=>q.probono).reduce((a,q)=>a+(+q.amount||0),0);
     box.innerHTML=posten.length?`<div class="tblwrap"><table>
       <thead><tr><th>Datum</th><th>Leistung</th><th>Umfang</th><th>Betrag</th><th>Höchstsatz</th><th></th><th></th></tr></thead>
       <tbody>${posten.map((q,i)=>{const r=RAVO[q.type]||{lbl:q.type,per:0},max=ravoMax(q.type,q.qty),ue=(+q.amount||0)>max;
         return `<tr><td class="mono">${dateDE(q.date)}</td>
           <td>${esc(r.lbl)}${q.desc?'<div class="muted" style="font-size:12px">'+esc(q.desc)+'</div>':""}</td>
           <td class="mono">${r.per?(q.qty||1)+" × "+r.per+" Min.":"Pauschale"}</td>
-          <td class="mono ${ue&&!q.probono?"bad-tx":""} ${q.probono?"muted":""}">${q.probono?"<s>"+money(q.amount)+"</s>":"<b>"+money(q.amount)+"</b>"}</td>
+          <td class="mono ${ue&&!q.probono?"bad-tx":""}">${q.probono?'<span class="muted">kostenfrei</span>':"<b>"+money(q.amount)+"</b>"}</td>
           <td class="mono muted">${money(max)}</td>
           <td><button type="button" class="btn ghost sm" data-ppro="${i}"
               title="${q.probono?"pro bono zurücknehmen":"pro bono – nicht berechnen, erscheint nicht auf der Rechnung"}">${q.probono?"pro bono":"⚑"}</button></td>
           <td><button type="button" class="btn ghost sm" data-pdel="${i}">✕</button></td></tr>`;}).join("")}
-      </tbody><tfoot>${pb?'<tr><td colspan="3" class="muted">pro bono – steht nicht auf der Rechnung</td><td class="mono muted">'+money(pb)+'</td><td colspan="3"></td></tr>':""}
+      </tbody><tfoot>${posten.some(q=>q.probono)?'<tr><td colspan="4" class="muted">'+
+        posten.filter(q=>q.probono).length+' Position(en) pro bono – kostenfrei, stehen nicht auf der Rechnung</td><td colspan="3"></td></tr>':""}
         <tr><td colspan="3" class="muted">Gesamtbetrag</td><td class="mono"><b>${money(sum)}</b></td><td colspan="3"></td></tr></tfoot>
       </table></div>`:'<div class="box info">Noch keine Posten erfasst.</div>';
     const ty=form.querySelector("#pType").value, r=RAVO[ty];
@@ -2778,7 +2784,19 @@ function mDoc(id,type,preset){
     if(e.target.id==="wlEmpf")    eigenerEmpf=e.target.value;
     if(!/^wl/.test(e.target.id||"")) draw();
   });
-  form.addEventListener("change",draw);
+  form.addEventListener("change",e=>{
+    /* Entweder pro bono oder eine Gebühr – beides zusammen gibt es nicht */
+    if(e.target.name==="probono"&&form.fee){
+      const an=e.target.checked;
+      form.fee.disabled=an;
+      const max=form.querySelector('[data-act="docFeeMax"]'); if(max) max.disabled=an;
+      if(an){ form.dataset.gebuehrVorher=form.fee.value||""; form.fee.value=0; if(form.paid) form.paid.checked=false; }
+      else  { form.fee.value=form.dataset.gebuehrVorher||""; }
+    }
+    if(e.target.name==="fee"&&form.probono&&(+e.target.value||0)>0) form.probono.checked=false;
+    if(e.target.name==="paid"&&e.target.checked&&form.probono) form.probono.checked=false;
+    draw();
+  });
   form.addEventListener("click",e=>{
     const del=e.target.closest("[data-pdel]");
     if(del){posten.splice(+del.dataset.pdel,1);return draw();}
@@ -2787,7 +2805,9 @@ function mDoc(id,type,preset){
     const a=e.target.closest("[data-act]"); if(!a) return;
     const act=a.dataset.act;
     if(act==="genDocRef"){e.preventDefault();form.no.value=makeRef(t.kurz,form.clientId.value);return;}
-    if(act==="docFeeMax"){e.preventDefault();form.fee.value=ravoMaxOf(t.fee);draw();return;}
+    if(act==="docFeeMax"){e.preventDefault();
+      if(form.probono&&form.probono.checked) return toast("Pro bono und Gebühr schließen sich aus");
+      form.fee.value=ravoMaxOf(t.fee);draw();return;}
     if(act==="fromCase"){e.preventDefault();fromCase();return;}
     if(act==="docPreview"){e.preventDefault();mDocPreview(snap());return;}
     if(act==="pMax"){e.preventDefault();
@@ -2908,8 +2928,7 @@ function mDocView(id){
         ${dd("Mandantschaft",x.name?"<b>"+esc(x.name)+"</b>":'<span class="muted">–</span>')}
         ${dd("Datum",dateDE(d.date))}
         ${c?dd("Verfahren",'<a href="#" data-case="'+c.id+'">'+esc(c.caseNo||"")+'</a>'):""}
-        ${dd("Gebühr",gebuehrMarke(d)+(d.fee&&!d.paid&&!d.probono&&!d.abgeschrieben
-          ?' <button type="button" class="pill tag" data-act="docProBono" data-id="'+d.id+'" title="nicht berechnen">pro bono</button>':""))}
+        ${dd("Gebühr",gebuehrMarke(d))}
         ${(()=>{ if(d.type!=="rechnung") return "";
            const w=rechnungStand(d);
            return w.ausfall&&(w.teilweise||d.status==="rejected")
@@ -3289,7 +3308,7 @@ function vFees(){
         <td class="mono">${f.client&&f.client.phone?esc(f.client.phone):'<span class="muted">–</span>'}</td>
         <td>${esc(r.lbl)}${f.desc?'<div class="muted" style="font-size:12px">'+esc(f.desc)+'</div>':""}</td>
         <td class="mono">${r.per?(f.qty||1)+" × "+r.per+" Min.":"Pauschale"}</td>
-        <td class="mono ${ueber?"bad-tx":""}"><b>${money(f.amount)}</b></td>
+        <td class="mono ${ueber&&!f.probono?"bad-tx":""}">${f.probono?'<span class="muted">kostenfrei</span>':"<b>"+money(f.amount)+"</b>"}</td>
         <td class="mono muted">${money(max)}</td>
         <td>${f.probono?'<span class="pill tag">pro bono</span>'
           :f.paid?'<span class="pill ok">bezahlt</span>'
@@ -3307,8 +3326,8 @@ function vFees(){
   <div class="kpis">
     <div class="kpi"><div class="lbl">Abgerechnet gesamt</div><div class="val" style="font-size:21px">${money(gesamt)}</div><div class="sub">${fees.length} Positionen</div></div>
     <div class="kpi bad"><div class="lbl">Offen</div><div class="val" style="font-size:21px">${money(offen.reduce((a,f)=>a+(+f.amount||0),0))}</div><div class="sub">${offen.length} unbezahlt · §51 StGB</div></div>
-    ${pro.length?'<div class="kpi"><div class="lbl">Pro bono</div><div class="val" style="font-size:21px">'+
-      money(pro.reduce((a,f)=>a+(+f.amount||0),0))+'</div><div class="sub">'+pro.length+' nicht berechnet</div></div>':""}
+    ${pro.length?'<div class="kpi"><div class="lbl">Pro bono</div><div class="val">'+pro.length+
+      '</div><div class="sub">kostenfrei erbracht</div></div>':""}
     <div class="kpi acc"><div class="lbl">Nachweispflichtig</div><div class="val">${doku.length}</div><div class="sub">letzte ${DOKU_TAGE} Tage (RAVO §3 VI)</div></div>
     <div class="kpi ${over.length?"bad":"ok"}"><div class="lbl">Über Höchstsatz</div><div class="val">${over.length}</div><div class="sub">RAVO §4 III: unwirksam</div></div>
   </div>
@@ -3790,7 +3809,7 @@ function mCase(id,presetClient){
         return `<tr><td class="mono">${dateDE(f.date)}</td>
           <td>${esc(r.lbl)}${f.desc?'<div class="muted" style="font-size:12px">'+esc(f.desc)+'</div>':""}</td>
           <td class="mono">${r.per?(f.qty||1)+" × "+r.per+" Min.":"Pauschale"}</td>
-          <td class="mono ${ue?"bad-tx":""}"><b>${money(f.amount)}</b></td>
+          <td class="mono ${ue&&!f.probono?"bad-tx":""}">${f.probono?'<span class="muted">kostenfrei</span>':"<b>"+money(f.amount)+"</b>"}</td>
           <td class="mono muted">${money(max)}</td>
           <td><div class="tags">${
             f.abgeschrieben?'<span class="pill neutral" title="erledigt, aber nicht erhalten">abgeschrieben</span>'
@@ -3887,7 +3906,11 @@ function mCase(id,presetClient){
     }
     const fp=t.closest("[data-feepaid]"); if(fp){fees[+fp.dataset.feepaid].paid=!fees[+fp.dataset.feepaid].paid;return drawFees();}
     const fb=t.closest("[data-feepro]");
-    if(fb){const q=fees[+fb.dataset.feepro]; q.probono=!q.probono; if(q.probono) q.paid=false; return drawFees();}
+    if(fb){const q=fees[+fb.dataset.feepro];
+      q.probono=!q.probono;
+      if(q.probono){ q.paid=false; q.betragVorher=+q.amount||0; q.amount=0; }
+      else { q.amount=+q.betragVorher||0; delete q.betragVorher; }
+      return drawFees();}
     const fd=t.closest("[data-feedel]"); if(fd){fees.splice(+fd.dataset.feedel,1);drawFees();return drawStrafe();}
   });
 
@@ -3977,13 +4000,13 @@ function mCaseView(id){
         <tbody>${pp.map(f=>{const rr=RAVO[f.type]||{lbl:f.type};
           return '<tr><td class="mono">'+dateDE(f.date)+'</td><td>'+esc(f.src==="doc"?f.desc:rr.lbl)+(f.src!=="doc"&&f.desc?' <span class="muted">– '+esc(f.desc)+'</span>':"")+
                  (f.src==="doc"?' <span class="pill tag">Schriftstück</span>':"")+
-                 '</td><td class="mono">'+money(f.amount)+'</td><td>'+(f.probono?'<span class="pill tag">pro bono</span>'
+                 '</td><td class="mono">'+(f.probono?'<span class="muted">kostenfrei</span>':money(f.amount))+'</td><td>'+(f.probono?'<span class="pill tag">pro bono</span>'
                  :f.paid?'<span class="pill ok">bezahlt</span>'
                  :f.abgeschrieben?'<span class="pill neutral">abgeschrieben</span>':'<span class="pill bad">offen</span>')+'</td></tr>';}).join("")}
         </tbody><tfoot><tr><td colspan="2" class="muted">Gesamt für dieses Verfahren</td>
         <td class="mono"><b>${money(feeTotal(c))}</b></td>
         <td><div class="tags">${feeOpen(c)?'<span class="pill bad">'+money(feeOpen(c))+' offen</span>':'<span class="pill ok">nichts offen</span>'}${
-            feeProBono(c)?'<span class="pill tag">'+money(feeProBono(c))+' pro bono</span>':""}</div></td></tr></tfoot></table></div>`:"")(caseFees(c))}
+            feeProBono(c)?'<span class="pill tag">'+feeProBono(c)+' × pro bono</span>':""}</div></td></tr></tfoot></table></div>`:"")(caseFees(c))}
 
       ${docsOfCase(c.id).length?'<div class="sec-title">Schriftsätze zu diesem Verfahren</div>'+docTable(docsOfCase(c.id)):""}
       ${c.note?'<div class="dt" style="margin-top:16px">Notizen</div><div class="dd" style="white-space:pre-wrap">'+esc(c.note)+'</div>':""}
@@ -4333,7 +4356,9 @@ document.addEventListener("click",e=>{
       }
       case "docProBono": {
         const dp=DB.docs.find(x=>x.id===id); if(!dp) return;
-        dp.probono=!dp.probono; if(dp.probono){ dp.paid=false; dp.abgeschrieben=false; }
+        dp.probono=!dp.probono;
+        if(dp.probono){ dp.paid=false; dp.abgeschrieben=false; dp.gebuehrVorher=+dp.fee||0; dp.fee=0; }
+        else { dp.fee=+dp.gebuehrVorher||0; delete dp.gebuehrVorher; }
         save(); render();
         if(document.querySelector(".modal")){ closeModal(); mDocView(dp.id); }
         return toast(dp.probono?"Als pro bono vermerkt":"Wieder als offen gef\u00fchrt");
