@@ -964,11 +964,33 @@ const docsOfCase=id=>idx().docsJeFall.get(id)||LEER;
    alles andere steckt bereits im Honorar des jeweiligen Falls.             */
 const docsLose=id=>docsOf(id).filter(d=>!idx().fall.has(d.caseId));
 /* Zahlen zu Schriftsätzen: erledigt = genehmigt oder abgelehnt */
+/* Eine abgelehnte Rechnung schreibt die darin abgerechneten Posten ab:
+   erledigt, aber nicht erhalten. Wird die Ablehnung zur\u00fcckgenommen, gilt
+   wieder das Gegenteil.                                                     */
+function rechnungAbschreiben(r,an){
+  if(!r||r.type!=="rechnung") return 0;
+  const posten=Array.isArray(r.posten)?r.posten:[];
+  const gleich=(a,b)=>a.type===b.type&&(+a.amount||0)===(+b.amount||0)&&(a.date||"")===(b.date||"");
+  let n=0;
+  const c=r.caseId?DB.cases.find(x=>x.id===r.caseId):null;
+  if(c) (c.fees||[]).forEach(f=>{
+    if(posten.some(p=>gleich(p,f))&&!!f.abgeschrieben!==an){ f.abgeschrieben=an; n++; }
+  });
+  DB.docs.forEach(d=>{
+    if(d===r||d.type==="rechnung"||!(+d.fee)) return;
+    if(c&&d.caseId!==c.id) return;
+    const t=TPL[d.type]||{};
+    const alsPosten={type:t.fee||"antrag",amount:+d.fee||0,date:d.date||""};
+    if(posten.some(p=>gleich(p,alsPosten))&&!!d.abgeschrieben!==an){ d.abgeschrieben=an; n++; }
+  });
+  r.abgeschrieben=an;
+  return n;
+}
 function docStats(list){
   const s={n:list.length,entwurf:0,submitted:0,approved:0,rejected:0,fee:0,offen:0};
   list.forEach(d=>{
     s[d.status&&s[d.status]!==undefined?d.status:"entwurf"]++;
-    s.fee+=+d.fee||0; if(d.fee&&!d.paid) s.offen+=+d.fee||0;
+    s.fee+=+d.fee||0; if(d.fee&&!d.paid&&!d.abgeschrieben) s.offen+=+d.fee||0;
   });
   s.erledigt=s.approved+s.rejected;
   s.rate=pct(s.approved,s.erledigt);
@@ -1082,15 +1104,17 @@ function caseFees(c,exclDocId){
     if(d.type==="rechnung"||!(+d.fee)) return;
     if(exclDocId&&d.id===exclDocId) return;
     const t=TPL[d.type]||{};
-    out.push({type:t.fee||"antrag",qty:1,amount:+d.fee||0,paid:!!d.paid,date:d.date||"",
-              desc:(t.lbl||d.type)+(d.no?" \u00b7 "+d.no:""),src:"doc",docId:d.id});
+    out.push({type:t.fee||"antrag",qty:1,amount:+d.fee||0,paid:!!d.paid,abgeschrieben:!!d.abgeschrieben,
+              date:d.date||"",desc:(t.lbl||d.type)+(d.no?" \u00b7 "+d.no:""),src:"doc",docId:d.id});
   });
   return out.sort((a,b)=>(a.date||"").localeCompare(b.date||""));
 }
 const docFees =c=>caseFees(c).filter(f=>f.src==="doc");
 const summe   =l=>l.reduce((a,f)=>a+(Number(f.amount)||0),0);
 const feeTotal=c=>summe(caseFees(c));
-const feeOpen =c=>summe(caseFees(c).filter(f=>!f.paid));
+/* Abgeschriebene Posten sind erledigt, aber nicht eingegangen – sie stehen
+   weiter in der Dokumentation (§3 V RAVO), zählen aber nicht mehr als offen. */
+const feeOpen =c=>summe(caseFees(c).filter(f=>!f.paid&&!f.abgeschrieben));
 /* Positionen, die über dem RAVO-Höchstbetrag liegen (§4 III: unwirksam) */
 
 /* --- Fehlerprüfung §35 StPO: automatisch erkannte Punkte --- */
@@ -1207,7 +1231,7 @@ function allFees(){
   /* Rechnungen bleiben außen vor – sie fassen bereits erfasste Leistungen nur zusammen */
   DB.docs.forEach(l=>{ if(l.fee&&l.type!=="rechnung")
     out.push({id:l.id,src:"doc",srcId:l.id,ref:l.no||"",type:(TPL[l.type]||{}).fee||"antrag",qty:1,
-              amount:l.fee,paid:!!l.paid,date:l.date||"",lawyerId:l.lawyerId,
+              amount:l.fee,paid:!!l.paid,abgeschrieben:!!l.abgeschrieben,date:l.date||"",lawyerId:l.lawyerId,
               desc:(TPL[l.type]||{}).lbl||l.type,
               client:client(l.clientId)||{name:l.extName||"",phone:l.extPhone||"",pass:l.extPass||""}}); });
   return out.sort((a,b)=>(b.date||"").localeCompare(a.date||""));
@@ -2244,6 +2268,7 @@ function vDocs(){
         <td>${(r=>r===RUECK[""]?'<span class="muted">–</span>'
           :'<button type="button" class="pill '+r.cls+'" data-act="docRueck" data-id="'+d.id+'" title="umschalten">'+r.kurz+'</button>')(rueckOf(d))}</td>
         <td class="mono">${d.fee?money(d.fee)+(d.paid?' <span class="pill ok">bezahlt</span>'
+          :d.abgeschrieben?' <span class="pill neutral" title="erledigt, aber nicht erhalten">abgeschrieben</span>'
           :' <button type="button" class="pill bad" data-act="docPaid" data-id="'+d.id+'" title="als bezahlt markieren">offen</button>')
           :'<span class="muted">–</span>'}</td>
         <td>${x.ok?'<span class="pill ok">ja</span>':'<span class="pill bad">'+x.miss.length+' fehlt</span>'}${d.eigenerText?' <span class="pill tag" title="eigener Wortlaut">✎</span>':""}</td>
@@ -2555,6 +2580,9 @@ function mDoc(id,type,preset){
       <div id="wortlautBox"></div>
       ${t.noFee?"":'<div class="sec-title">Gebühr</div>'}
       ${t.noFee?`<div class="sec-title">Zahlung</div>
+        <div class="hint" style="margin:0 0 8px">Setzt du den Status auf <b>Abgelehnt</b>, werden die abgerechneten
+        Posten als abgeschrieben geführt – erledigt, aber nicht erhalten. Sie zählen dann nicht mehr zu den
+        offenen Honoraren, bleiben aber im Nachweis nach §3 V RAVO stehen.</div>
         <label class="chk"><input type="checkbox" name="paid" ${cur.paid?"checked":""}>
           <div><div class="t">bezahlt</div><div class="s">Die Summe ergibt sich aus den Posten oben.</div></div></label>`:`
       <div class="f-row three" style="margin-top:10px">
@@ -2743,11 +2771,22 @@ function mDoc(id,type,preset){
     const s=snap();
     if(!s.no) s.no=makeRef(t.kurz,s.clientId);
     if(eigenerText===null){ delete s.eigenerText; delete s.eigenerBetreff; delete s.eigenerEmpf; }
+    const vorher=d?d.status:"";
+    let ziel=d;
     if(d){
       Object.assign(d,s,{updated:new Date().toISOString()});
       if(eigenerText===null){ delete d.eigenerText; delete d.eigenerBetreff; delete d.eigenerEmpf; }
-    }else DB.docs.push({...s,id:uid(),created:new Date().toISOString()});
-    save();closeModal();render();toast(d?"Schriftsatz aktualisiert":"Schriftsatz gespeichert");
+    }else{ ziel={...s,id:uid(),created:new Date().toISOString()}; DB.docs.push(ziel); }
+    /* Abgelehnte Rechnung: die abgerechneten Posten abschreiben */
+    let abg=0;
+    if(ziel.type==="rechnung"){
+      if(ziel.status==="rejected"&&vorher!=="rejected")      abg=rechnungAbschreiben(ziel,true);
+      else if(vorher==="rejected"&&ziel.status!=="rejected") abg=-rechnungAbschreiben(ziel,false);
+    }
+    save();closeModal();render();
+    toast(abg>0?abg+" Posten abgeschrieben \u2013 erledigt, nicht erhalten"
+        : abg<0?(-abg)+" Posten wieder als offen gef\u00fchrt"
+        : d?"Schriftsatz aktualisiert":"Schriftsatz gespeichert");
   };
 }
 /* Vorschau */
@@ -2811,7 +2850,9 @@ function mDocView(id){
         ${dd("Mandantschaft",x.name?"<b>"+esc(x.name)+"</b>":'<span class="muted">–</span>')}
         ${dd("Datum",dateDE(d.date))}
         ${c?dd("Verfahren",'<a href="#" data-case="'+c.id+'">'+esc(c.caseNo||"")+'</a>'):""}
-        ${dd("Gebühr",money(d.fee)+(d.fee?' <button type="button" class="pill '+(d.paid?"ok":"bad")+'" data-act="docPaid" data-id="'+d.id+'">'+(d.paid?"bezahlt":"offen")+'</button>':""))}
+        ${dd("Gebühr",money(d.fee)+(!d.fee?"":d.abgeschrieben
+          ?' <span class="pill neutral" title="erledigt, aber nicht erhalten">abgeschrieben</span>'
+          :' <button type="button" class="pill '+(d.paid?"ok":"bad")+'" data-act="docPaid" data-id="'+d.id+'">'+(d.paid?"bezahlt":"offen")+'</button>'))}
         ${dd("Rücksprache",'<button type="button" class="pill '+rueckOf(d).cls+'" data-act="docRueck" data-id="'+d.id+'">'+esc(rueckOf(d).lbl)+'</button>')}
       </div>
       ${x.t.frist?'<div class="box warn"><b>Frist:</b> '+esc(x.t.frist)+'</div>':""}
@@ -3158,6 +3199,7 @@ function docTable(list){
         <td>${(r=>r===RUECK[""]?'<span class="muted">–</span>'
           :'<button type="button" class="pill '+r.cls+'" data-act="docRueck" data-id="'+d.id+'" title="umschalten">'+r.kurz+'</button>')(rueckOf(d))}</td>
         <td class="mono">${d.fee?money(d.fee)+(d.paid?' <span class="pill ok">bezahlt</span>'
+          :d.abgeschrieben?' <span class="pill neutral" title="erledigt, aber nicht erhalten">abgeschrieben</span>'
           :' <button type="button" class="pill bad" data-act="docPaid" data-id="'+d.id+'" title="als bezahlt markieren">offen</button>')
           :'<span class="muted">–</span>'}</td>
       </tr>`;}).join("")}
@@ -3172,7 +3214,7 @@ function vFees(){
   const tab=ui.feeTab||"doku";
   const inRange=f=>f.date&&daysBetween(f.date,today())<=DOKU_TAGE&&daysBetween(f.date,today())>=0;
   const doku=fees.filter(inRange);
-  const offen=fees.filter(f=>!f.paid);
+  const offen=fees.filter(f=>!f.paid&&!f.abgeschrieben);
   const over=fees.filter(f=>(Number(f.amount)||0)>ravoMax(f.type,f.qty));
   const gesamt=fees.reduce((a,f)=>a+(Number(f.amount)||0),0);
   const list=tab==="doku"?doku:tab==="offen"?offen:tab==="over"?over:fees;
@@ -3190,7 +3232,9 @@ function vFees(){
         <td class="mono">${r.per?(f.qty||1)+" × "+r.per+" Min.":"Pauschale"}</td>
         <td class="mono ${ueber?"bad-tx":""}"><b>${money(f.amount)}</b></td>
         <td class="mono muted">${money(max)}</td>
-        <td>${f.paid?'<span class="pill ok">bezahlt</span>':'<span class="pill bad">offen</span>'}${ueber?' <span class="pill bad">über RAVO</span>':""}</td>
+        <td>${f.paid?'<span class="pill ok">bezahlt</span>'
+          :f.abgeschrieben?'<span class="pill neutral" title="erledigt, aber nicht erhalten">abgeschrieben</span>'
+          :'<span class="pill bad">offen</span>'}${ueber?' <span class="pill bad">über RAVO</span>':""}</td>
         <td class="mono muted">${esc(f.ref||"")}</td></tr>`;}).join("")}
     </tbody></table></div>`:'<div class="card empty">keine Positionen</div>';
 
@@ -3686,7 +3730,8 @@ function mCase(id,presetClient){
           <td class="mono">${r.per?(f.qty||1)+" × "+r.per+" Min.":"Pauschale"}</td>
           <td class="mono ${ue?"bad-tx":""}"><b>${money(f.amount)}</b></td>
           <td class="mono muted">${money(max)}</td>
-          <td><button type="button" class="btn sm ${f.paid?"":"danger"}" data-feepaid="${i}">${f.paid?"bezahlt":"offen"}</button></td>
+          <td>${f.abgeschrieben?'<span class="pill neutral" title="erledigt, aber nicht erhalten">abgeschrieben</span>'
+            :'<button type="button" class="btn sm '+(f.paid?"":"danger")+'" data-feepaid="'+i+'">'+(f.paid?"bezahlt":"offen")+'</button>'}</td>
           <td><button type="button" class="btn ghost sm" data-feedel="${i}">✕</button></td></tr>`;}).join("")}
       </tbody><tfoot><tr><td colspan="3" class="muted">Summe</td>
         <td class="mono"><b>${money(fees.reduce((a,f)=>a+(+f.amount||0),0))}</b></td><td colspan="3"></td></tr></tfoot>
@@ -3699,7 +3744,7 @@ function mCase(id,presetClient){
         <span class="mono" style="margin-left:auto"><b>${money(summe(dl))}</b></span></div>
       ${dl.map(f=>`<div class="line"><span>${esc(f.desc)}</span>
         <span class="muted mono">${dateDE(f.date)}</span>
-        <span class="mono" style="margin-left:auto">${money(f.amount)}${f.paid?"":' <span class="bad-tx">offen</span>'}</span></div>`).join("")}
+        <span class="mono" style="margin-left:auto">${money(f.amount)}${f.paid?"":f.abgeschrieben?' <span class="muted">abgeschrieben</span>':' <span class="bad-tx">offen</span>'}</span></div>`).join("")}
       <div class="line"><b>Gesamt für dieses Verfahren</b>
         <span class="mono" style="margin-left:auto"><b>${money(fees.reduce((a,f)=>a+(+f.amount||0),0)+summe(dl))}</b></span></div>
       <div class="hint" style="margin:6px 0 0">Diese Posten stammen aus den Schriftstücken und zählen automatisch mit – nicht noch einmal von Hand eintragen.</div>
@@ -3864,7 +3909,8 @@ function mCaseView(id){
         <tbody>${pp.map(f=>{const rr=RAVO[f.type]||{lbl:f.type};
           return '<tr><td class="mono">'+dateDE(f.date)+'</td><td>'+esc(f.src==="doc"?f.desc:rr.lbl)+(f.src!=="doc"&&f.desc?' <span class="muted">– '+esc(f.desc)+'</span>':"")+
                  (f.src==="doc"?' <span class="pill tag">Schriftstück</span>':"")+
-                 '</td><td class="mono">'+money(f.amount)+'</td><td>'+(f.paid?'<span class="pill ok">bezahlt</span>':'<span class="pill bad">offen</span>')+'</td></tr>';}).join("")}
+                 '</td><td class="mono">'+money(f.amount)+'</td><td>'+(f.paid?'<span class="pill ok">bezahlt</span>'
+                 :f.abgeschrieben?'<span class="pill neutral">abgeschrieben</span>':'<span class="pill bad">offen</span>')+'</td></tr>';}).join("")}
         </tbody><tfoot><tr><td colspan="2" class="muted">Gesamt für dieses Verfahren</td>
         <td class="mono"><b>${money(feeTotal(c))}</b></td>
         <td>${feeOpen(c)?'<span class="pill bad">'+money(feeOpen(c))+' offen</span>':'<span class="pill ok">vollständig bezahlt</span>'}</td></tr></tfoot></table></div>`:"")(caseFees(c))}
@@ -4054,7 +4100,7 @@ function dokuHtml(){
         ${f.ref?'<br><span style="color:#5a6879">'+esc(f.ref)+'</span>':""}</td>
       <td>${r.per?(f.qty||1)+" × "+r.per+" Min.":"Pauschale"}<br><span style="color:#5a6879">${esc(r.ref)}</span></td>
       <td class="num">${money(f.amount)}${zuviel?'<br><span style="color:#a12">über Höchstsatz '+money(max)+'</span>':""}</td>
-      <td>${f.paid?"bezahlt":"offen"}</td></tr>`;
+      <td>${f.paid?"bezahlt":f.abgeschrieben?"abgeschrieben":"offen"}</td></tr>`;
   };
 
   return `<div class="doc">
@@ -4127,7 +4173,7 @@ function exportDokuCsv(){
     const r=RAVO[f.type]||{lbl:f.type,ref:"",per:0};
     rows.push([f.date,f.client?.name||"—",f.client?.phone||"—",r.lbl+(f.desc?" – "+f.desc:""),
       r.per?(f.qty||1)+" × "+r.per+" Min.":"Pauschale",f.amount,ravoMax(f.type,f.qty),r.ref,
-      f.paid?"bezahlt":"offen",f.ref||""]);
+      f.paid?"bezahlt":f.abgeschrieben?"abgeschrieben":"offen",f.ref||""]);
   });
   rows.push([],["Summe","","","","",list.reduce((a,f)=>a+(+f.amount||0),0)]);
   dl("ravo_leistungsnachweis_"+stamp()+".csv",csv(rows),"text/csv");
