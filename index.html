@@ -2219,6 +2219,7 @@ function vDocs(){
     <div class="sub">${tplKeys().length} Vorlagen · Anträge, Gesuche, Beschwerden und Rechnungen</div></div>
     <div class="spacer"></div>
     <button class="btn" data-act="tplList">✎ Vorlagen bearbeiten</button>
+    <button class="btn" data-act="assistent">🧭 Assistent</button>
     <button class="btn primary" data-act="pickDoc">＋ Neuer Schriftsatz</button></header>
   <div class="kpis">
     <div class="kpi acc"><div class="lbl">Schriftsätze</div><div class="val">${DB.docs.length}</div><div class="sub">${zahl("entwurf")} in Arbeit</div></div>
@@ -2258,7 +2259,8 @@ function vDocs(){
       </tr>`;}).join("")}
     </tbody></table></div>`
   :`<div class="card empty"><div class="big">📄</div>Noch kein Schriftsatz angelegt.<br>
-     <button class="btn primary" style="margin-top:14px" data-act="pickDoc">Vorlage auswählen</button></div>`}
+     <button class="btn primary" style="margin-top:14px" data-act="assistent">🧭 Assistent starten</button>
+     <button class="btn" style="margin-top:14px" data-act="pickDoc">Vorlage auswählen</button></div>`}
   <div class="sec-title">Welcher Schriftsatz wann</div>
   ${vorlagenRaster()}`;
 }
@@ -3046,146 +3048,228 @@ function faellePick(){
 
 
 
+
 /* =============================================================================
-   FALL-ASSISTENT
-   Fragt die Umstaende ab, die das Tool nicht ohnehin kennt, prueft sie gegen
-   Bussgeldkatalog und StPO und schreibt die Antworten als Abhandlungsfehler in
-   den Fall zurueck. Am Ende steht der passende Schriftsatz mit gefuellten
-   Feldern - deshalb keine Merkliste, sondern ein Weg mit Ergebnis.
+   SCHRIFTSATZ-ASSISTENT
+   Der Nutzer schildert die Lage in eigenen Worten. Der Assistent liest daraus,
+   worum es geht, gleicht Paragraphen mit dem Katalog ab, fragt gezielt nach,
+   was noch fehlt, und erzeugt daraus den fertig ausgefuellten Schriftsatz.
+   Ohne Netz und ohne Sprachmodell - erkannt wird ueber Stichworte.
    ============================================================================= */
-const ASSI_FRAGEN=[
-  {k:"cuff",   f:"Ist die Uhrzeit des Anlegens der Handschellen bekannt und wurde die Abhandlungszeit eingehalten?",
-               s:"25 Minuten, mit gefordertem Anwalt 120 Minuten, 1 Minute Kulanz (§12, §35 Nr. 1 StPO)"},
-  {k:"rights", f:"Wurde die Rechtsbelehrung binnen f\u00fcnf Minuten sinngem\u00e4\u00df verlesen?",
-               s:"§34 StPO, sonst §35 Nr. 2a"},
-  {k:"lawyer", f:"Wurde auf Wunsch ein Anwalt gestellt und wurden f\u00fcnf Anw\u00e4lte angerufen?",
-               s:"§31 Abs. 2 StPO, sonst §35 Nr. 2b"},
-  {k:"reason", f:"Wurde der Verhaftungsgrund auf Anfrage genannt?",
-               s:"§35 Nr. 3 StPO"},
-  {k:"file",   f:"Stehen Datum, Uhrzeit, Paragraf und Gesetzbuchk\u00fcrzel vollst\u00e4ndig in der Akte?",
-               s:"§35 Nr. 4 StPO"}
+const ASSI_TPL=[
+  {k:"revision",     w:["revision","widerspruch","anfechten","zu hoch","falsch bestraft","abhandlungsfehler",
+                        "freispruch","handschellen","belehrung","zu viel","unrechtm\u00e4\u00dfig","fehlerhaft","35 stpo"]},
+  {k:"akte",         w:["akteneinsicht","einsicht","unterlagen","bodycam anfordern","akte sehen","akte anfordern"]},
+  {k:"entschaedigung",w:["entsch\u00e4digung","erstattung","schadenersatz","geld zur\u00fcck","dienstausfall"]},
+  {k:"loeschung",    w:["l\u00f6schung","l\u00f6schen","strafakte weg","eintrag entfernen","verj\u00e4hrt","vorstrafe weg"]},
+  {k:"gnade",        w:["begnadigung","gnade","gouverneur","gnadengesuch"]},
+  {k:"dienstaufsicht",w:["dienstaufsicht","beschwerde","verhalten des beamten","unfreundlich","schikane","korrupt"]},
+  {k:"anzeige",      w:["anzeige","strafantrag","anzeigen","gesch\u00e4digt","bestohlen","betrogen","nicht bezahlt","51 stgb"]},
+  {k:"einstweilig",  w:["einstweilige","bel\u00e4stigt","bedroht","stalking","kontaktverbot","n\u00e4herungsverbot","verfolgt"]},
+  {k:"familie",      w:["familie","familienlizenz","heirat","hochzeit","gr\u00fcnden einer familie"]},
+  {k:"unternehmen",  w:["unternehmen","firma","gewerbe","betrieb","dachgesellschaft","marke","gr\u00fcnden"]},
+  {k:"vollmacht",    w:["vollmacht","vertretung","bevollm\u00e4chtig"]},
+  {k:"rechnung",     w:["rechnung","honorar","abrechnen","geb\u00fchr","bezahlen","kosten stellen"]}
 ];
-/* Zusatzfragen ohne eigenen Fehlerschluessel - sie steuern nur den Rat */
-const ASSI_EXTRA=[
-  {k:"anzeige", f:"Liegt bei Antragsdelikten eine Strafanzeige vor?",  s:"§16 Abs. 1 StPO", nurWenn:c=>catSum(c.charges).hits.some(h=>/Antragsdelikt/i.test(h.info||""))},
-  {k:"sta",     f:"War ein Staatsanwalt oder Richter beteiligt?",      s:"laut Katalog f\u00fcr diesen Vorwurf vorgeschrieben", nurWenn:c=>catSum(c.charges).sta},
-  {k:"fib",     f:"Wurde das FIB hinzugezogen?",                        s:"laut Katalog f\u00fcr diesen Vorwurf vorgeschrieben", nurWenn:c=>catSum(c.charges).fib},
-  {k:"kaution", f:"Wurde eine Kaution angesetzt oder kassiert?",        s:"ab 4 Hafteinheiten ausgeschlossen (§22 Abs. 3 StPO)", nurWenn:c=>(c.final&&c.final.stars||0)>KAUTION_MAX_HE, umgekehrt:1},
-  {k:"bodycam", f:"Liegen Bodycam-Aufnahmen des Vorfalls vor?",         s:"§2 StPO \u2013 Auswertung nur durch StA oder Richter", umgekehrt:1}
+/* Stichworte, die einen Abhandlungsfehler nahelegen */
+/* Themenworte je Abhandlungsfehler. Erkannt wird satzweise: Thema getroffen und
+   im selben Satz eine Verneinung oder ein Wort, das den Fehler benennt.      */
+const ASSI_FEHLER=[
+  {k:"cuff",   w:["handschelle","abhandlungszeit","abhandlung"],
+               zusatz:/(zu lange|\u00fcber eine stunde|\u00fcberschritten|stunde|\d{2,}\s*minuten|unbekannt|wei\u00df nicht)/i},
+  {k:"rights", w:["belehr","rechte"]},
+  {k:"lawyer", w:["anwalt","anw\u00e4lte","verteidiger"], zusatz:/(verweigert|abgelehnt|angerufen)/i},
+  {k:"reason", w:["verhaftungsgrund","grund der festnahme","warum"], zusatz:/(genannt|gesagt|mitgeteilt|erfahren)/i},
+  {k:"file",   w:["akte","strafakte","eintrag"], zusatz:/(unvollst\u00e4ndig|datum|uhrzeit|paragraf|k\u00fcrzel|fehlt)/i}
 ];
+const ASSI_NEIN=/\b(kein|keine|keinen|keiner|keinem|nicht|nichts|ohne|weder|niemals|nie|niemand|verweigert|abgelehnt|unbekannt|fehlt|fehlen|vergessen)\b/i;
+const ASSI_SAETZE=t=>String(t||"").split(/[.;!?\n]+/).map(x=>x.trim()).filter(Boolean);
 
-function mAssistent(caseId){
-  const c=DB.cases.find(x=>x.id===caseId); if(!c) return;
-  const cl=client(c.clientId), r=catSum(c.charges);
-  const extra=ASSI_EXTRA.filter(q=>!q.nurWenn||q.nurWenn(c));
-  /* Vorbelegung: bereits erfasste Fehler stehen auf "nein" */
-  const stand={};
-  ASSI_FRAGEN.forEach(q=>stand[q.k]=(c.errors&&c.errors[q.k])?"nein":"");
-  extra.forEach(q=>stand[q.k]="");
-  const auto=autoErrors(c);
-
-  const frageHtml=(q,gruppe)=>`<div class="afrage" data-af="${q.k}">
-    <div class="atext"><div class="t">${esc(q.f)}</div><div class="s">${esc(q.s)}</div></div>
-    <div class="seg-ctl plain" data-aseg="${q.k}">
-      <button type="button" data-v="ja">ja</button>
-      <button type="button" data-v="nein">nein</button>
-      <button type="button" data-v="">wei\u00df nicht</button>
-    </div></div>`;
-
-  openModal(`<div class="modal-h"><h3>\U0001f9ed Fall-Assistent</h3>
-      <span class="pill tag">${esc(c.caseNo||"")}${cl?" \u00b7 "+esc(cl.name):""}</span>
-      <button type="button" class="x" data-act="close">\u00d7</button></div>
-    <div class="modal-b">
-      <div class="calc" style="margin-bottom:16px">
-        <div class="line"><b>Vorwurf:</b> <span>${(c.charges||[]).map(esc).join(", ")||"noch keiner erfasst"}</span></div>
-        <div class="line"><b>Zul\u00e4ssig:</b> <span class="mono">${r.hits.length?r.stars+" \u2b50 \u00b7 "+money(r.fine):"\u2013"}</span>
-          <span class="muted">|</span><b>verh\u00e4ngt:</b>
-          <span class="mono ${auto.penalty?"bad-tx":""}">${(c.final&&c.final.stars)||0} \u2b50 \u00b7 ${money(c.final&&c.final.fine)}</span></div>
-        ${auto.penalty?'<div class="box bad">'+esc(auto.penalty)+'</div>':""}
-        ${r.conflicts.length?'<div class="box bad">Ausschluss bei derselben Tat: '+r.conflicts.map(esc).join("; ")+'</div>':""}
-        ${auto.qualif?'<div class="box bad">'+esc(auto.qualif)+'</div>':""}
-      </div>
-      <div class="sec-title" style="margin-top:0">Abhandlung</div>
-      ${ASSI_FRAGEN.map(q=>frageHtml(q)).join("")}
-      ${extra.length?'<div class="sec-title">Weitere Umst\u00e4nde</div>'+extra.map(q=>frageHtml(q)).join(""):""}
-      <div id="assiErgebnis"></div>
-    </div>
-    <div class="modal-f">
-      <button type="button" class="btn primary" data-act="assiAus">Auswerten</button>
-      <button type="button" class="btn ghost" data-act="close">Schlie\u00dfen</button>
-    </div>`);
-
-  const host=document.querySelector(".modal");
-  /* Vorbelegung anzeigen */
-  Object.entries(stand).forEach(([k,v])=>{
-    if(v==="") return;
-    const b=host.querySelector('[data-aseg="'+k+'"] button[data-v="'+v+'"]'); if(b) b.classList.add("on");
+function assiLesen(txt,c){
+  const t=" "+String(txt||"").toLowerCase().replace(/\s+/g," ")+" ";
+  const punkte=k=>ASSI_TPL.find(x=>x.k===k).w.reduce((n,w)=>n+(t.includes(w)?1:0),0);
+  const rang=ASSI_TPL.map(x=>({k:x.k,n:punkte(x.k)})).sort((a,b)=>b.n-a.n);
+  /* Paragraphen aus dem Text mit dem Katalog abgleichen */
+  const buecher=["stgb","stpo","waffg","btmg","stvo","bgb","bdg","sverfg","ravo"];
+  const vorwuerfe=[];
+  String(txt||"").replace(/§\s?(\d+[a-z]?(?:\.\d+)?)/gi,(m,nr,pos)=>{
+    const um=String(txt).slice(Math.max(0,pos-22),pos+28).toLowerCase();
+    const b=buecher.find(x=>um.includes(x));
+    CATALOG.forEach(e=>{
+      if(e.p.replace(/§|\s/g,"").toLowerCase()!==String(nr).toLowerCase()) return;
+      if(b&&e.b.toLowerCase()!==b) return;
+      const l=catLabel(e); if(!vorwuerfe.includes(l)) vorwuerfe.push(l);
+    });
+    return m;
   });
+  /* einzelne Angaben */
+  const zahl=re=>{const m=re.exec(txt||""); return m?m[1].replace(/\./g,""):"";};
+  const fehler={}, saetze=ASSI_SAETZE(txt);
+  ASSI_FEHLER.forEach(f=>{
+    saetze.forEach(satz=>{
+      const s2=satz.toLowerCase();
+      if(!f.w.some(w=>s2.includes(w))) return;
+      const nein=ASSI_NEIN.test(satz);
+      if(f.k==="cuff"){ if(nein||(f.zusatz&&f.zusatz.test(satz))) fehler.cuff=true; return; }
+      if(nein) fehler[f.k]=true;
+    });
+  });
+  return {
+    tpl: rang[0].n?rang[0].k:"",
+    treffer: rang.filter(x=>x.n).slice(0,3),
+    vorwuerfe,
+    uhrzeit: (/(\b[0-2]?\d:[0-5]\d)\b/.exec(txt||"")||[])[1]||"",
+    datum:   (()=>{const m=/(\d{1,2})\.(\d{1,2})\.(\d{4})/.exec(txt||"");
+              return m?m[3]+"-"+("0"+m[2]).slice(-2)+"-"+("0"+m[1]).slice(-2):"";})(),
+    betrag:  zahl(/([\d.]{3,})\s*(?:\$|dollar)/i),
+    wanteds: zahl(/(\d)\s*(?:wanted|hafteinheit|stern)/i),
+    fehler,
+    /* Bodycam: der Satz entscheidet, nicht die Wortstellung */
+    bodycam:     saetze.some(z=>/bodycam|body-cam|aufnahme/i.test(z)&&!ASSI_NEIN.test(z)),
+    ohneBodycam: saetze.some(z=>/bodycam|body-cam|aufnahme/i.test(z)&&ASSI_NEIN.test(z))
+  };
+}
 
-  host.addEventListener("click",e=>{
-    const b=e.target.closest("[data-aseg] button");
-    if(b){
-      const g=b.closest("[data-aseg]");
-      g.querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));
-      stand[g.dataset.aseg]=b.dataset.v;
+/* Felder der gewaehlten Vorlage aus Schilderung, Fall und Antworten fuellen */
+function assiFelder(tpl,ctx){
+  const {txt,c,fund,antw}=ctx;
+  const cl=c?client(c.clientId):null, r=c?catSum(c.charges):null;
+  const satz=String(txt||"").trim();
+  const gruende=()=>{
+    const z=[];
+    if(c){ Object.entries(allErrors(c)).forEach(([k,v])=>{const f=FEHLER.find(x=>x.k===k);
+      z.push((f?f.t+" \u2013 "+f.s:k)+(v&&v.txt?" "+v.txt:""));}); }
+    if(!z.length) z.push("Das Urteil beruht auf einer Verletzung des Gesetzes (\u00a739 Abs. 1 StPO).");
+    return z.join("\n");
+  };
+  const F={
+    revision:{sachverhalt:satz||("Meiner Mandantschaft wird vorgeworfen, am "+(c&&c.date?dateDE(c.date):"\u2014")+
+                " gegen "+((c&&c.charges||[]).join(", ")||"\u2014")+" versto\u00dfen zu haben."),
+              gruende:gruende(),
+              beweise:antw.beweise||("die Strafakte"+(c&&c.caseNo?" "+c.caseNo:"")+
+                (c&&(c.officers||[]).length?" sowie die Bodycam-Aufnahmen der Beamten "+c.officers.join(", "):"")),
+              fehlbeweise:fund.ohneBodycam?"Bodycam-Aufnahmen des Vorfalls\nZeugenaussagen au\u00dferhalb der abhandelnden Beh\u00f6rde":"",
+              entsch:true},
+    akte:{tatDatum:(c&&c.date)||fund.datum||"",beweise:true,zusatz:antw.zusatz||""},
+    entschaedigung:{anlass:antw.anlass||"",detail:satz,tage:antw.tage||""},
+    loeschung:{grund:antw.grund||"",detail:satz},
+    gnade:{detail:satz,gruende:antw.gruende||satz},
+    dienstaufsicht:{beamter:antw.beamter||((c&&(c.officers||[])[0])||""),behoerde:antw.behoerde||(c&&c.agency)||"",
+                    vorfall:satz,forderung:antw.forderung||""},
+    anzeige:{taeter:antw.taeter||"",tat:satz,tatzeit:fund.datum||(c&&c.date)||"",tatort:antw.tatort||""},
+    einstweilig:{gegner:antw.gegner||"",vorfall:satz,mass:antw.mass||""},
+    familie:{familyName:antw.familyName||"",houseNo:antw.houseNo||"",oath:true},
+    unternehmen:{art:antw.art||"Einzelunternehmen",firma:antw.firma||"",zweck:satz,sitz:antw.sitz||"",oath:true},
+    vollmacht:{umfang:antw.umfang||"",bis:antw.bis||""},
+    rechnung:{adressat:antw.adressat||"Justiz \u2013 Pflichtverteidigung",konto:antw.konto||""}
+  };
+  return F[tpl]||{};
+}
+/* Welche Pflichtfelder bleiben nach dem Lesen offen? */
+function assiOffen(tpl,werte){
+  const t=tplOf(tpl)||{};
+  return (t.fields||[]).filter(f=>f.req&&f.t!=="check"&&f.t!=="posten"&&!String(werte[f.k]||"").trim());
+}
+
+function mAssistent(preset){
+  let schritt=1, fund=null, tpl="", antw={}, cid=(preset&&preset.clientId)||"", kid=(preset&&preset.caseId)||"";
+  const zeichne=()=>{
+    const host=document.getElementById("assiBody"); if(!host) return;
+    if(schritt===1){
+      host.innerHTML=`
+        <label class="f"><span>Was ist passiert? *</span>
+          <textarea id="assiTxt" rows="7" placeholder="Zum Beispiel: Mein Mandant wurde gestern wegen §28 StGB festgenommen. Die Handschellen waren um 20:14 an, die Abhandlung dauerte über eine Stunde. Einen Anwalt hat er verlangt, es wurde aber keiner angerufen. Verhängt wurden 3 Wanteds und 60.000 $.">${esc(antw._txt||"")}</textarea>
+          <div class="hint">Schreib es so, wie du es einem Kollegen erz\u00e4hlen w\u00fcrdest. Paragraphen, Uhrzeiten und Betr\u00e4ge werden erkannt.</div></label>
+        <div class="f-row">
+          ${pickerField("assiClient","Mandantschaft",mandantenPick(),cid,"Name, Reisepass oder Telefon \u2026")}
+          ${pickerField("assiCase","Verfahren (optional)",faellePick(),kid,"Fallnummer oder Mandant \u2026")}
+        </div>`;
       return;
     }
-    const a=e.target.closest("[data-act]");
-    if(!a||a.dataset.act!=="assiAus") return;
-    e.preventDefault();
-    auswerten();
-  });
-
-  function auswerten(){
-    /* Antworten in Fehler uebersetzen: "nein" bedeutet Verstoss */
-    const errs=Object.assign({},c.errors);
-    ASSI_FRAGEN.forEach(q=>{
-      if(stand[q.k]==="nein") errs[q.k]=true;
-      else if(stand[q.k]==="ja") delete errs[q.k];
-    });
-    c.errors=errs; save();
-
-    const gefunden=allErrors(c);
-    const liste=Object.entries(gefunden).map(([k,v])=>{
-      const f=FEHLER.find(x=>x.k===k)||{t:k,s:""};
-      return {t:f.t,s:f.s,txt:v&&v.txt||""};
-    });
-    /* Rat aus den Zusatzfragen */
-    const hinweise=[];
-    if(stand.anzeige==="nein") hinweise.push("Antragsdelikt ohne Strafanzeige \u2013 ohne Antrag des Gesch\u00e4digten keine Verfolgung (\u00a716 Abs. 1 StPO).");
-    if(stand.sta==="nein")     hinweise.push("Der Katalog schreibt f\u00fcr diesen Vorwurf die \u00dcbergabe an die Staatsanwaltschaft vor; sie ist unterblieben.");
-    if(stand.fib==="nein")     hinweise.push("Der Katalog schreibt die Hinzuziehung des FIB vor; sie ist unterblieben.");
-    if(stand.kaution==="ja")   hinweise.push("Bei mehr als "+KAUTION_MAX_HE+" Hafteinheiten ist eine Kaution nach \u00a722 Abs. 3 StPO ausgeschlossen.");
-    if(stand.bodycam==="nein") hinweise.push("Ohne Bodycam fehlt der objektive Nachweis; die Aussage der Beamten steht allein.");
-    if(stand.bodycam==="ja")   hinweise.push("Bodycam anfordern \u2013 die Auswertung durch Exekutivbeamte ist nach \u00a72 StPO unzul\u00e4ssig.");
-
-    const rv=revisionStatus(c), fristOffen=rv.s==="open";
-    const box=document.getElementById("assiErgebnis");
-    box.innerHTML=`
-      <div class="sec-title">Befund</div>
-      ${liste.length
-        ? '<div class="box bad"><b>'+liste.length+' Abhandlungsfehler nach \u00a735 StPO</b> \u2013 der Beschuldigte ist freizusprechen und freizulassen.'
-          +liste.map(x=>'<div style="margin-top:6px">\u2022 '+esc(x.t)+' <span style="opacity:.85">('+esc(x.s)+')</span>'
-            +(x.txt?'<br><span style="opacity:.9">'+esc(x.txt)+'</span>':"")+'</div>').join("")+'</div>'
-        : '<div class="box ok">Kein Abhandlungsfehler feststellbar. Der Angriff muss \u00fcber den Tatvorwurf selbst oder die Beweislage laufen.</div>'}
-      ${hinweise.length?'<div class="box warn">'+hinweise.map(esc).join("<br>")+'</div>':""}
-      <div class="sec-title">Empfehlung</div>
-      <div class="box info">${
-        liste.length
-          ? (fristOffen
-              ? "Revisionsantrag stellen \u2013 die Frist nach \u00a741 Abs. 1 StPO l\u00e4uft noch. Vorher Akteneinsicht beantragen, wenn die Akte noch nicht vorliegt."
-              : "Die Revisionsfrist ist abgelaufen oder die Revision l\u00e4uft bereits. In Betracht kommen Begnadigungsgesuch (Art. 9 SVerfG) und, nach Freispruch, L\u00f6schung der Strafakte (\u00a719 Abs. 4 StPO).")
-          : "Zun\u00e4chst Akteneinsicht nach \u00a736 Abs. 1 StPO beantragen und die Beweislage pr\u00fcfen. Ohne objektiven Nachweis tr\u00e4gt der Vorwurf nicht."
-      }</div>
-      <div class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
-        <button type="button" class="btn" data-act="newDocFor" data-id="${c.id}" data-tpl="akte">\U0001f4c2 Akteneinsicht</button>
-        <button type="button" class="btn ${liste.length&&fristOffen?"primary":""}" data-act="newRevision" data-id="${c.id}">\u2696\ufe0f Revisionsantrag</button>
-        <button type="button" class="btn" data-act="newDocFor" data-id="${c.id}" data-tpl="dienstaufsicht">\U0001f6a8 Dienstaufsichtsbeschwerde</button>
+    const c=kid?DB.cases.find(x=>x.id===kid):null;
+    const werte=assiFelder(tpl,{txt:antw._txt,c,fund,antw});
+    const offen=assiOffen(tpl,werte);
+    host.innerHTML=`
+      <div class="calc">
+        <div class="line"><b>Erkannt:</b>
+          ${fund.treffer.map(x=>'<span class="pill '+(x.k===tpl?"ok":"tag")+'">'+esc((tplOf(x.k)||{}).lbl||x.k)+'</span>').join("")||'<span class="muted">nichts Eindeutiges</span>'}</div>
+        ${fund.vorwuerfe.length?'<div class="line"><b>Vorw\u00fcrfe:</b> '+fund.vorwuerfe.map(v=>{
+            const e=catFind(v); return '<span class="pill tag" title="'+esc(v)+'">'+esc(e?e.b+" "+e.p:v)+'</span>';
+          }).join("")+'</div>':""}
+        ${Object.keys(fund.fehler).length?'<div class="line"><b>M\u00f6gliche Fehler:</b> '+Object.keys(fund.fehler).map(k=>{
+            const f=FEHLER.find(x=>x.k===k); return '<span class="pill bad">'+esc(f?f.t:k)+'</span>';}).join("")+'</div>':""}
+        ${[fund.uhrzeit?"Uhrzeit "+fund.uhrzeit:"",fund.datum?"Datum "+dateDE(fund.datum):"",
+           fund.betrag?"Betrag "+money(fund.betrag):"",fund.wanteds?fund.wanteds+" Hafteinheiten":""]
+          .filter(Boolean).map(x=>'<span class="pill tag">'+esc(x)+'</span>').join("")}
       </div>
-      <div class="hint">Die Antworten sind im Fall gespeichert; der Schriftsatz \u00fcbernimmt sie als Revisionsgr\u00fcnde.</div>`;
-    box.scrollIntoView({block:"nearest"});
-    render();
+      <label class="f"><span>Schriftsatz</span>
+        <select id="assiTpl">${tplKeys().map(k=>'<option value="'+k+'"'+(k===tpl?" selected":"")+'>'+
+          esc((tplOf(k)||{}).ico||"")+" "+esc((tplOf(k)||{}).lbl||k)+'</option>').join("")}</select></label>
+      ${offen.length?'<div class="sec-title">Dazu brauche ich noch</div>'+offen.map(f=>`
+        <label class="f"><span>${esc(f.l)}</span>
+          ${f.t==="area"?'<textarea data-aq="'+f.k+'" rows="3" placeholder="'+esc(f.hint||"")+'">'+esc(antw[f.k]||"")+'</textarea>'
+            :f.t==="select"?'<select data-aq="'+f.k+'"><option value="">\u2013 w\u00e4hlen \u2013</option>'+
+              (f.opts||[]).map(o=>'<option'+((antw[f.k]||"")===o?" selected":"")+'>'+esc(o)+'</option>').join("")+'</select>'
+            :f.t==="date"?'<input type="date" data-aq="'+f.k+'" value="'+esc(antw[f.k]||"")+'">'
+            :'<input type="text" data-aq="'+f.k+'" value="'+esc(antw[f.k]||"")+'" placeholder="'+esc(f.hint||"")+'">'}
+          ${f.hint&&f.t!=="text"?'<div class="hint">'+esc(f.hint)+'</div>':""}</label>`).join("")
+        :'<div class="box ok">Alle Pflichtangaben sind beisammen.</div>'}
+      ${!kid&&(tplOf(tpl)||{}).caseRef?'<div class="box warn">Diese Vorlage bezieht sich auf ein Verfahren. Ohne Verfahren bleiben Fallnummer, Beamte und Strafma\u00df leer.</div>':""}`;
+  };
+
+  openModal(`<div class="modal-h"><h3>\U0001f9ed Schriftsatz-Assistent</h3>
+      <span class="pill tag" id="assiSchritt">Schritt 1 von 2</span>
+      <button type="button" class="x" data-act="close">\u00d7</button></div>
+    <div class="modal-b"><div id="assiBody"></div></div>
+    <div class="modal-f">
+      <button type="button" class="btn primary" data-act="assiWeiter">Weiter</button>
+      <button type="button" class="btn" data-act="assiZurueck" hidden>Zur\u00fcck</button>
+      <button type="button" class="btn ghost" data-act="close">Abbrechen</button>
+    </div>`);
+  zeichne();
+
+  const host=document.querySelector(".modal");
+  host.addEventListener("input",e=>{
+    if(e.target.id==="assiTxt") antw._txt=e.target.value;
+    const q=e.target.dataset&&e.target.dataset.aq; if(q) antw[q]=e.target.value;
+  });
+  host.addEventListener("change",e=>{
+    if(e.target.id==="assiTpl"){ tpl=e.target.value; zeichne(); }
+    const n=e.target.name;
+    if(n==="assiClient"){ cid=e.target.value; }
+    if(n==="assiCase"){ kid=e.target.value; const c=DB.cases.find(x=>x.id===kid); if(c&&!cid) cid=c.clientId; }
+    const q=e.target.dataset&&e.target.dataset.aq; if(q) antw[q]=e.target.value;
+  });
+  host.addEventListener("click",e=>{
+    const a=e.target.closest("[data-act]"); if(!a) return;
+    if(a.dataset.act==="assiZurueck"){ schritt=1; zeichne(); stand(); return; }
+    if(a.dataset.act!=="assiWeiter") return;
+    e.preventDefault();
+    if(schritt===1){
+      const t=(antw._txt||"").trim();
+      if(!t){ toast("Bitte die Situation kurz schildern"); return; }
+      const c=kid?DB.cases.find(x=>x.id===kid):null;
+      fund=assiLesen(t,c);
+      tpl=fund.tpl||"revision";
+      /* erkannte Fehler in den Fall schreiben, damit die Gr\u00fcnde stimmen */
+      if(c&&Object.keys(fund.fehler).length){ c.errors=Object.assign({},c.errors,fund.fehler); save(); }
+      schritt=2; zeichne(); stand(); return;
+    }
+    /* Schritt 2: erzeugen */
+    const c=kid?DB.cases.find(x=>x.id===kid):null;
+    const werte=assiFelder(tpl,{txt:antw._txt,c,fund,antw});
+    const offen=assiOffen(tpl,werte);
+    if(offen.length){ toast("Bitte noch: "+offen.map(f=>f.l).join(", ")); return; }
+    closeModal();
+    mDoc(null,tpl,Object.assign({clientId:cid,caseId:kid,date:today()},werte));
+    toast("Schriftsatz vorbereitet \u2013 bitte pr\u00fcfen");
+  });
+  function stand(){
+    host.querySelector("#assiSchritt").textContent="Schritt "+schritt+" von 2";
+    host.querySelector('[data-act="assiWeiter"]').textContent=schritt===1?"Weiter":"Schriftsatz erzeugen";
+    host.querySelector('[data-act="assiZurueck"]').hidden=schritt===1;
   }
+  stand();
 }
 
 /* =============================================================================
@@ -4370,7 +4454,7 @@ document.addEventListener("click",e=>{
         if(document.querySelector(".modal")){ closeModal(); mDocView(dp.id); }
         return toast(dp.paid?"Als bezahlt vermerkt":"Wieder als offen vermerkt");
       }
-      case "assistent": closeModal(); return mAssistent(id);
+      case "assistent": closeModal(); return mAssistent(a.dataset.id?{caseId:a.dataset.id}:null);
       case "newDocFor": {
         const c=DB.cases.find(x=>x.id===id); if(!c) return;
         closeModal();
