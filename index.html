@@ -992,6 +992,7 @@ function gebuehrMarke(d){
     if(w.hat>=w.soll&&w.soll>0) return money(w.soll)+' <span class="pill ok">bezahlt</span>';
     return money(w.soll)+' <button type="button" class="pill bad" data-act="docPaid" data-id="'+d.id+'" title="als bezahlt markieren">offen</button>';
   }
+  if(d.probono) return money(d.fee)+' <button type="button" class="pill tag" data-act="docProBono" data-id="'+d.id+'" title="pro bono \u2013 nicht berechnet, zur\u00fccknehmen">pro bono</button>';
   if(d.paid) return money(d.fee)+' <span class="pill ok">bezahlt</span>';
   if(d.abgeschrieben) return money(d.fee)+' <span class="pill neutral" title="erledigt, aber nicht erhalten">abgeschrieben</span>';
   return money(d.fee)+' <button type="button" class="pill bad" data-act="docPaid" data-id="'+d.id+'" title="als bezahlt markieren">offen</button>';
@@ -1020,7 +1021,7 @@ function docStats(list){
   const s={n:list.length,entwurf:0,submitted:0,approved:0,rejected:0,fee:0,offen:0};
   list.forEach(d=>{
     s[d.status&&s[d.status]!==undefined?d.status:"entwurf"]++;
-    s.fee+=+d.fee||0; if(d.fee&&!d.paid&&!d.abgeschrieben) s.offen+=+d.fee||0;
+    s.fee+=+d.fee||0; if(d.fee&&!d.paid&&!d.abgeschrieben&&!d.probono) s.offen+=+d.fee||0;
   });
   s.erledigt=s.approved+s.rejected;
   s.rate=pct(s.approved,s.erledigt);
@@ -1135,7 +1136,7 @@ function caseFees(c,exclDocId){
     if(exclDocId&&d.id===exclDocId) return;
     const t=TPL[d.type]||{};
     out.push({type:t.fee||"antrag",qty:1,amount:+d.fee||0,paid:!!d.paid,abgeschrieben:!!d.abgeschrieben,
-              date:d.date||"",desc:(t.lbl||d.type)+(d.no?" \u00b7 "+d.no:""),src:"doc",docId:d.id});
+              probono:!!d.probono,date:d.date||"",desc:(t.lbl||d.type)+(d.no?" \u00b7 "+d.no:""),src:"doc",docId:d.id});
   });
   return out.sort((a,b)=>(a.date||"").localeCompare(b.date||""));
 }
@@ -1144,7 +1145,10 @@ const summe   =l=>l.reduce((a,f)=>a+(Number(f.amount)||0),0);
 const feeTotal=c=>summe(caseFees(c));
 /* Abgeschriebene Posten sind erledigt, aber nicht eingegangen – sie stehen
    weiter in der Dokumentation (§3 V RAVO), zählen aber nicht mehr als offen. */
-const feeOpen =c=>summe(caseFees(c).filter(f=>!f.paid&&!f.abgeschrieben));
+const feeOpen =c=>summe(caseFees(c).filter(f=>!f.paid&&!f.abgeschrieben&&!f.probono));
+/* Pro bono: bewusst nicht berechnet. Nach \u00a74 RAVO sind die S\u00e4tze H\u00f6chstbetr\u00e4ge,
+   weniger ist immer zul\u00e4ssig. Die Leistung bleibt dokumentiert (\u00a73 V RAVO).   */
+const feeProBono=c=>summe(caseFees(c).filter(f=>f.probono));
 /* Positionen, die über dem RAVO-Höchstbetrag liegen (§4 III: unwirksam) */
 
 /* --- Fehlerprüfung §35 StPO: automatisch erkannte Punkte --- */
@@ -1261,7 +1265,7 @@ function allFees(){
   /* Rechnungen bleiben außen vor – sie fassen bereits erfasste Leistungen nur zusammen */
   DB.docs.forEach(l=>{ if(l.fee&&l.type!=="rechnung")
     out.push({id:l.id,src:"doc",srcId:l.id,ref:l.no||"",type:(TPL[l.type]||{}).fee||"antrag",qty:1,
-              amount:l.fee,paid:!!l.paid,abgeschrieben:!!l.abgeschrieben,date:l.date||"",lawyerId:l.lawyerId,
+              amount:l.fee,paid:!!l.paid,abgeschrieben:!!l.abgeschrieben,probono:!!l.probono,date:l.date||"",lawyerId:l.lawyerId,
               desc:(TPL[l.type]||{}).lbl||l.type,
               client:client(l.clientId)||{name:l.extName||"",phone:l.extPhone||"",pass:l.extPass||""}}); });
   return out.sort((a,b)=>(b.date||"").localeCompare(a.date||""));
@@ -2612,6 +2616,8 @@ function mDoc(id,type,preset){
         offenen Honoraren, bleiben aber im Nachweis nach §3 V RAVO stehen.</div>
         <label class="chk"><input type="checkbox" name="paid" ${cur.paid?"checked":""}>
           <div><div class="t">vollständig bezahlt</div><div class="s">Die Summe ergibt sich aus den Posten oben.</div></div></label>
+        <label class="chk"><input type="checkbox" name="probono" ${cur.probono?"checked":""}>
+          <div><div class="t">pro bono</div><div class="s">Bewusst nicht berechnet – nach §4 RAVO sind die Sätze Höchstbeträge.</div></div></label>
         <label class="f"><span>Tatsächlich erhalten ($) – bei Teilerstattung</span>
           <input type="number" name="erhalten" min="0" step="1000" value="${cur.erhalten??""}" placeholder="leer lassen, wenn voll oder gar nicht gezahlt">
           <div class="hint">Zahlt das GOV nur einen Teil, trag den erhaltenen Betrag ein. Der Rest wird als Ausfall geführt.</div></label>`:`
@@ -2620,8 +2626,10 @@ function mDoc(id,type,preset){
           <div style="display:flex;gap:6px"><input type="number" name="fee" min="0" step="1000" value="${cur.fee??""}">
           <button type="button" class="btn sm" data-act="docFeeMax">max</button></div></label>
         <label class="f" style="align-self:end"><span>&nbsp;</span>
-          <label class="chk" style="margin:0"><input type="checkbox" name="paid" ${cur.paid?"checked":""}>
-            <div><div class="t">bezahlt</div></div></label></label>
+          <label class="chk" style="margin:0 0 6px"><input type="checkbox" name="paid" ${cur.paid?"checked":""}>
+            <div><div class="t">bezahlt</div></div></label>
+          <label class="chk" style="margin:0"><input type="checkbox" name="probono" ${cur.probono?"checked":""}>
+            <div><div class="t">pro bono</div></div></label></label>
         <div class="f"><span style="display:block;font-size:12px;color:var(--tx2);margin-bottom:5px">Höchstsatz</span>
           <div class="mono" style="padding:8px 0"><b>${money(ravoMaxOf(t.fee))}</b>
             <a href="#" data-act="editRavo" class="muted" style="font-size:12px">ändern</a></div></div>
@@ -2645,6 +2653,7 @@ function mDoc(id,type,preset){
       caseId:form.caseId.value,
       fee:form.fee?(+form.fee.value||0):0,paid:form.paid?form.paid.checked:false,note:form.note.value,posten,
       erhalten:form.erhalten?form.erhalten.value:(cur.erhalten??""),
+      probono:form.probono?form.probono.checked:!!cur.probono,
       rueck:form.rueck?form.rueck.value:(cur.rueck||"")};
     (t.fields||[]).forEach(f=>{
       if(f.t==="posten") return;
@@ -2890,7 +2899,8 @@ function mDocView(id){
         ${dd("Mandantschaft",x.name?"<b>"+esc(x.name)+"</b>":'<span class="muted">–</span>')}
         ${dd("Datum",dateDE(d.date))}
         ${c?dd("Verfahren",'<a href="#" data-case="'+c.id+'">'+esc(c.caseNo||"")+'</a>'):""}
-        ${dd("Gebühr",gebuehrMarke(d))}
+        ${dd("Gebühr",gebuehrMarke(d)+(d.fee&&!d.paid&&!d.probono&&!d.abgeschrieben
+          ?' <button type="button" class="pill tag" data-act="docProBono" data-id="'+d.id+'" title="nicht berechnen">pro bono</button>':""))}
         ${(()=>{ if(d.type!=="rechnung") return "";
            const w=rechnungStand(d);
            return w.ausfall&&(w.teilweise||d.status==="rejected")
@@ -3253,7 +3263,8 @@ function vFees(){
   const tab=ui.feeTab||"doku";
   const inRange=f=>f.date&&daysBetween(f.date,today())<=DOKU_TAGE&&daysBetween(f.date,today())>=0;
   const doku=fees.filter(inRange);
-  const offen=fees.filter(f=>!f.paid&&!f.abgeschrieben);
+  const offen=fees.filter(f=>!f.paid&&!f.abgeschrieben&&!f.probono);
+  const pro=fees.filter(f=>f.probono);
   const over=fees.filter(f=>(Number(f.amount)||0)>ravoMax(f.type,f.qty));
   const gesamt=fees.reduce((a,f)=>a+(Number(f.amount)||0),0);
   const list=tab==="doku"?doku:tab==="offen"?offen:tab==="over"?over:fees;
@@ -3271,7 +3282,8 @@ function vFees(){
         <td class="mono">${r.per?(f.qty||1)+" × "+r.per+" Min.":"Pauschale"}</td>
         <td class="mono ${ueber?"bad-tx":""}"><b>${money(f.amount)}</b></td>
         <td class="mono muted">${money(max)}</td>
-        <td>${f.paid?'<span class="pill ok">bezahlt</span>'
+        <td>${f.probono?'<span class="pill tag">pro bono</span>'
+          :f.paid?'<span class="pill ok">bezahlt</span>'
           :f.abgeschrieben?'<span class="pill neutral" title="erledigt, aber nicht erhalten">abgeschrieben</span>'
           :'<span class="pill bad">offen</span>'}${ueber?' <span class="pill bad">über RAVO</span>':""}</td>
         <td class="mono muted">${esc(f.ref||"")}</td></tr>`;}).join("")}
@@ -3286,6 +3298,8 @@ function vFees(){
   <div class="kpis">
     <div class="kpi"><div class="lbl">Abgerechnet gesamt</div><div class="val" style="font-size:21px">${money(gesamt)}</div><div class="sub">${fees.length} Positionen</div></div>
     <div class="kpi bad"><div class="lbl">Offen</div><div class="val" style="font-size:21px">${money(offen.reduce((a,f)=>a+(+f.amount||0),0))}</div><div class="sub">${offen.length} unbezahlt · §51 StGB</div></div>
+    ${pro.length?'<div class="kpi"><div class="lbl">Pro bono</div><div class="val" style="font-size:21px">'+
+      money(pro.reduce((a,f)=>a+(+f.amount||0),0))+'</div><div class="sub">'+pro.length+' nicht berechnet</div></div>':""}
     <div class="kpi acc"><div class="lbl">Nachweispflichtig</div><div class="val">${doku.length}</div><div class="sub">letzte ${DOKU_TAGE} Tage (RAVO §3 VI)</div></div>
     <div class="kpi ${over.length?"bad":"ok"}"><div class="lbl">Über Höchstsatz</div><div class="val">${over.length}</div><div class="sub">RAVO §4 III: unwirksam</div></div>
   </div>
@@ -3769,8 +3783,12 @@ function mCase(id,presetClient){
           <td class="mono">${r.per?(f.qty||1)+" × "+r.per+" Min.":"Pauschale"}</td>
           <td class="mono ${ue?"bad-tx":""}"><b>${money(f.amount)}</b></td>
           <td class="mono muted">${money(max)}</td>
-          <td>${f.abgeschrieben?'<span class="pill neutral" title="erledigt, aber nicht erhalten">abgeschrieben</span>'
-            :'<button type="button" class="btn sm '+(f.paid?"":"danger")+'" data-feepaid="'+i+'">'+(f.paid?"bezahlt":"offen")+'</button>'}</td>
+          <td><div class="tags">${
+            f.abgeschrieben?'<span class="pill neutral" title="erledigt, aber nicht erhalten">abgeschrieben</span>'
+            :f.probono?'<button type="button" class="btn ghost sm" data-feepro="'+i+'" title="pro bono zur\u00fccknehmen">pro bono</button>'
+            :'<button type="button" class="btn sm '+(f.paid?"":"danger")+'" data-feepaid="'+i+'">'+(f.paid?"bezahlt":"offen")+'</button>'
+              +(f.paid?"":'<button type="button" class="btn ghost sm" data-feepro="'+i+'" title="nicht berechnen">pro bono</button>')
+          }</div></td>
           <td><button type="button" class="btn ghost sm" data-feedel="${i}">✕</button></td></tr>`;}).join("")}
       </tbody><tfoot><tr><td colspan="3" class="muted">Summe</td>
         <td class="mono"><b>${money(fees.reduce((a,f)=>a+(+f.amount||0),0))}</b></td><td colspan="3"></td></tr></tfoot>
@@ -3783,7 +3801,7 @@ function mCase(id,presetClient){
         <span class="mono" style="margin-left:auto"><b>${money(summe(dl))}</b></span></div>
       ${dl.map(f=>`<div class="line"><span>${esc(f.desc)}</span>
         <span class="muted mono">${dateDE(f.date)}</span>
-        <span class="mono" style="margin-left:auto">${money(f.amount)}${f.paid?"":f.abgeschrieben?' <span class="muted">abgeschrieben</span>':' <span class="bad-tx">offen</span>'}</span></div>`).join("")}
+        <span class="mono" style="margin-left:auto">${money(f.amount)}${f.paid?"":f.probono?' <span class="muted">pro bono</span>':f.abgeschrieben?' <span class="muted">abgeschrieben</span>':' <span class="bad-tx">offen</span>'}</span></div>`).join("")}
       <div class="line"><b>Gesamt für dieses Verfahren</b>
         <span class="mono" style="margin-left:auto"><b>${money(fees.reduce((a,f)=>a+(+f.amount||0),0)+summe(dl))}</b></span></div>
       <div class="hint" style="margin:6px 0 0">Diese Posten stammen aus den Schriftstücken und zählen automatisch mit – nicht noch einmal von Hand eintragen.</div>
@@ -3859,6 +3877,8 @@ function mCase(id,presetClient){
       drawFees();drawStrafe();return;
     }
     const fp=t.closest("[data-feepaid]"); if(fp){fees[+fp.dataset.feepaid].paid=!fees[+fp.dataset.feepaid].paid;return drawFees();}
+    const fb=t.closest("[data-feepro]");
+    if(fb){const q=fees[+fb.dataset.feepro]; q.probono=!q.probono; if(q.probono) q.paid=false; return drawFees();}
     const fd=t.closest("[data-feedel]"); if(fd){fees.splice(+fd.dataset.feedel,1);drawFees();return drawStrafe();}
   });
 
@@ -3948,7 +3968,8 @@ function mCaseView(id){
         <tbody>${pp.map(f=>{const rr=RAVO[f.type]||{lbl:f.type};
           return '<tr><td class="mono">'+dateDE(f.date)+'</td><td>'+esc(f.src==="doc"?f.desc:rr.lbl)+(f.src!=="doc"&&f.desc?' <span class="muted">– '+esc(f.desc)+'</span>':"")+
                  (f.src==="doc"?' <span class="pill tag">Schriftstück</span>':"")+
-                 '</td><td class="mono">'+money(f.amount)+'</td><td>'+(f.paid?'<span class="pill ok">bezahlt</span>'
+                 '</td><td class="mono">'+money(f.amount)+'</td><td>'+(f.probono?'<span class="pill tag">pro bono</span>'
+                 :f.paid?'<span class="pill ok">bezahlt</span>'
                  :f.abgeschrieben?'<span class="pill neutral">abgeschrieben</span>':'<span class="pill bad">offen</span>')+'</td></tr>';}).join("")}
         </tbody><tfoot><tr><td colspan="2" class="muted">Gesamt für dieses Verfahren</td>
         <td class="mono"><b>${money(feeTotal(c))}</b></td>
@@ -4139,7 +4160,7 @@ function dokuHtml(){
         ${f.ref?'<br><span style="color:#5a6879">'+esc(f.ref)+'</span>':""}</td>
       <td>${r.per?(f.qty||1)+" × "+r.per+" Min.":"Pauschale"}<br><span style="color:#5a6879">${esc(r.ref)}</span></td>
       <td class="num">${money(f.amount)}${zuviel?'<br><span style="color:#a12">über Höchstsatz '+money(max)+'</span>':""}</td>
-      <td>${f.paid?"bezahlt":f.abgeschrieben?"abgeschrieben":"offen"}</td></tr>`;
+      <td>${f.probono?"pro bono":f.paid?"bezahlt":f.abgeschrieben?"abgeschrieben":"offen"}</td></tr>`;
   };
 
   return `<div class="doc">
@@ -4212,7 +4233,7 @@ function exportDokuCsv(){
     const r=RAVO[f.type]||{lbl:f.type,ref:"",per:0};
     rows.push([f.date,f.client?.name||"—",f.client?.phone||"—",r.lbl+(f.desc?" – "+f.desc:""),
       r.per?(f.qty||1)+" × "+r.per+" Min.":"Pauschale",f.amount,ravoMax(f.type,f.qty),r.ref,
-      f.paid?"bezahlt":f.abgeschrieben?"abgeschrieben":"offen",f.ref||""]);
+      f.probono?"pro bono":f.paid?"bezahlt":f.abgeschrieben?"abgeschrieben":"offen",f.ref||""]);
   });
   rows.push([],["Summe","","","","",list.reduce((a,f)=>a+(+f.amount||0),0)]);
   dl("ravo_leistungsnachweis_"+stamp()+".csv",csv(rows),"text/csv");
@@ -4299,6 +4320,13 @@ document.addEventListener("click",e=>{
         dr2.rueck=dr2.rueck==="offen"?"erledigt":"offen"; save(); render();
         if(document.querySelector(".modal")){ closeModal(); mDocView(dr2.id); }
         return toast(dr2.rueck==="offen"?"Als zu besprechen vermerkt":"Als besprochen vermerkt");
+      }
+      case "docProBono": {
+        const dp=DB.docs.find(x=>x.id===id); if(!dp) return;
+        dp.probono=!dp.probono; if(dp.probono){ dp.paid=false; dp.abgeschrieben=false; }
+        save(); render();
+        if(document.querySelector(".modal")){ closeModal(); mDocView(dp.id); }
+        return toast(dp.probono?"Als pro bono vermerkt":"Wieder als offen gef\u00fchrt");
       }
       case "docPaid": {
         const dp=DB.docs.find(x=>x.id===id); if(!dp) return;
