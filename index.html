@@ -2524,9 +2524,20 @@ function mDoc(id,type,preset){
   };
   openModal(`<form id="docForm">
     <div class="modal-h"><h3>${t.ico} ${d?"Schriftsatz "+esc(d.no||""):esc(t.lbl)}</h3>
+      <button type="button" class="btn ghost sm" data-act="afAuf" title="Felder aus einer Schilderung füllen">🧭 Assistent</button>
       <button type="button" class="btn ghost sm" data-act="editTpl" data-id="${tp}" title="Wortlaut dieser Vorlage bearbeiten">✎ Vorlage</button>
       <button type="button" class="x" data-act="close">×</button></div>
     <div class="modal-b">
+      <div id="afPanel" class="calc" style="margin-bottom:14px" hidden>
+        <label class="f" style="margin:0"><span>🧭 Schildere die Lage – der Assistent füllt daraus die Felder</span>
+          <textarea id="afTxt" rows="5" placeholder="${esc(ASSI_HILFE[tp]||"Beschreibe kurz, worum es geht.")}"></textarea></label>
+        <div class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:9px;align-items:center">
+          <button type="button" class="btn primary sm" data-act="afUeber">Felder füllen</button>
+          <button type="button" class="btn ghost sm" data-act="afZu">schließen</button>
+          <span class="hint" style="margin:0">Nur leere Felder werden gefüllt – dein Text bleibt stehen.</span>
+        </div>
+        <div id="afFund"></div>
+      </div>
       <div class="box info" style="margin-bottom:14px">${t.an?"<b>"+esc(t.an.replace(/\n/g," · "))+"</b> · ":""}${esc(t.ref||"")}
         ${t.frist?'<br><span class="warn-tx">Frist: '+esc(t.frist)+'</span>':""}
         ${t.hinweis?"<br>"+esc(t.hinweis):""}</div>
@@ -2731,6 +2742,40 @@ function mDoc(id,type,preset){
         amount,date:form.querySelector("#pDate").value||today(),desc:form.querySelector("#pDesc").value.trim()});
       form.querySelector("#pAmount").value="";form.querySelector("#pDesc").value="";
       draw();return;}
+    if(act==="afAuf"||act==="afZu"){
+      e.preventDefault();
+      const p=form.querySelector("#afPanel");
+      p.hidden=act==="afZu";
+      if(!p.hidden){ const ta=p.querySelector("#afTxt"); ta.focus(); p.scrollIntoView({block:"nearest"}); }
+      return;
+    }
+    if(act==="afUeber"){
+      e.preventDefault();
+      const txt=(form.querySelector("#afTxt").value||"").trim();
+      if(!txt){ toast("Bitte kurz schildern, worum es geht"); return; }
+      const kid=form.caseId?form.caseId.value:"";
+      const c=kid?DB.cases.find(x=>x.id===kid):null;
+      const {fund,werte}=assiWerte(tp,txt,c);
+      let n=0; const namen=[];
+      (t.fields||[]).forEach(f=>{
+        if(f.t==="posten"||f.t==="check") return;
+        const el=form.elements[f.k]; if(!el) return;
+        const w=werte[f.k];
+        if(w===undefined||w===null||String(w).trim()==="") return;
+        if(String(el.value||"").trim()) return;
+        el.value=String(w); n++; namen.push(f.l);
+      });
+      form.querySelector("#afFund").innerHTML=`
+        <div class="box ${n?"ok":"info"}" style="margin-top:10px">
+          ${n?"<b>"+n+(n===1?" Feld gef\u00fcllt:</b> ":" Felder gef\u00fcllt:</b> ")+esc(namen.join(", "))
+             :"<b>Nichts Neues \u00fcbernommen.</b> Die betroffenen Felder sind bereits ausgef\u00fcllt."}
+          ${fund.vorwuerfe.length?'<br>Vorw\u00fcrfe erkannt: '+fund.vorwuerfe.map(v=>{const x=catFind(v);return esc(x?x.b+" "+x.p:v);}).join(", "):""}
+          ${Object.keys(fund.fehler).length?'<br>Abhandlungsfehler erkannt: '+Object.keys(fund.fehler).map(k=>{
+              const f2=FEHLER.find(y=>y.k===k); return esc(f2?f2.t:k);}).join(", "):""}
+        </div>`;
+      draw();
+      return;
+    }
     if(act==="wlEdit"){e.preventDefault();
       eigenerText=String(t.text||""); eigenerBetreff=t.betreff||""; eigenerEmpf=t.an||"";
       drawWortlaut(); toast("Wortlaut nur für diesen Schriftsatz"); return;}
@@ -3130,45 +3175,115 @@ function assiLesen(txt,c){
   };
 }
 
-/* Felder der gewaehlten Vorlage aus Schilderung, Fall und Antworten fuellen */
+/* Felder der gewaehlten Vorlage aus Schilderung, Fall und Antworten fuellen.
+   Die Feldnamen stammen aus TPL - bei Aenderungen dort hier nachziehen.      */
 function assiFelder(tpl,ctx){
   const {txt,c,fund,antw}=ctx;
-  const cl=c?client(c.clientId):null, r=c?catSum(c.charges):null;
+  const det=(typeof assiDetails==="function")?assiDetails(txt):{};
   const satz=String(txt||"").trim();
+  const nimm=(...k)=>{ for(const x of k){ if(x&&String(x).trim()) return String(x).trim(); } return ""; };
   const gruende=()=>{
     const z=[];
-    if(c){ Object.entries(allErrors(c)).forEach(([k,v])=>{const f=FEHLER.find(x=>x.k===k);
-      z.push((f?f.t+" \u2013 "+f.s:k)+(v&&v.txt?" "+v.txt:""));}); }
+    if(c) Object.entries(allErrors(c)).forEach(([k,v])=>{
+      const f=FEHLER.find(x=>x.k===k);
+      z.push((f?f.t+" \u2013 "+f.s:k)+(v&&v.txt?" "+v.txt:""));
+    });
     if(!z.length) z.push("Das Urteil beruht auf einer Verletzung des Gesetzes (\u00a739 Abs. 1 StPO).");
     return z.join("\n");
   };
+  const wannText=()=>nimm(
+    [fund&&fund.datum?dateDE(fund.datum):"",fund&&fund.uhrzeit?"gegen "+fund.uhrzeit+" Uhr":"",det.ort||""]
+      .filter(Boolean).join(", "),
+    c&&c.date?dateDE(c.date):"");
+
   const F={
-    revision:{sachverhalt:satz||("Meiner Mandantschaft wird vorgeworfen, am "+(c&&c.date?dateDE(c.date):"\u2014")+
-                " gegen "+((c&&c.charges||[]).join(", ")||"\u2014")+" versto\u00dfen zu haben."),
-              gruende:gruende(),
-              beweise:antw.beweise||("die Strafakte"+(c&&c.caseNo?" "+c.caseNo:"")+
-                (c&&(c.officers||[]).length?" sowie die Bodycam-Aufnahmen der Beamten "+c.officers.join(", "):"")),
-              fehlbeweise:fund.ohneBodycam?"Bodycam-Aufnahmen des Vorfalls\nZeugenaussagen au\u00dferhalb der abhandelnden Beh\u00f6rde":"",
-              entsch:true},
-    akte:{tatDatum:(c&&c.date)||fund.datum||"",beweise:true,zusatz:antw.zusatz||""},
-    entschaedigung:{anlass:antw.anlass||"",detail:satz,tage:antw.tage||""},
-    loeschung:{grund:antw.grund||"",detail:satz},
-    gnade:{detail:satz,gruende:antw.gruende||satz},
-    dienstaufsicht:{beamter:antw.beamter||((c&&(c.officers||[])[0])||""),behoerde:antw.behoerde||(c&&c.agency)||"",
-                    vorfall:satz,forderung:antw.forderung||""},
-    anzeige:{taeter:antw.taeter||"",tat:satz,tatzeit:fund.datum||(c&&c.date)||"",tatort:antw.tatort||""},
-    einstweilig:{gegner:antw.gegner||"",vorfall:satz,mass:antw.mass||""},
-    familie:{familyName:antw.familyName||"",houseNo:antw.houseNo||"",oath:true},
-    unternehmen:{art:antw.art||"Einzelunternehmen",firma:antw.firma||"",zweck:satz,sitz:antw.sitz||"",oath:true},
-    vollmacht:{umfang:antw.umfang||"",bis:antw.bis||""},
-    rechnung:{adressat:antw.adressat||"Justiz \u2013 Pflichtverteidigung",konto:antw.konto||""}
+    akte:{ tatDatum:nimm(c&&c.date,fund&&fund.datum), beweise:true, zusatz:nimm(antw.zusatz) },
+
+    revision:{ sachverhalt:satz,
+               gruende:gruende(),
+               beweise:nimm(antw.beweise,
+                 "die Strafakte"+(c&&c.caseNo?" "+c.caseNo:"")+
+                 (c&&(c.officers||[]).length?" sowie die Bodycam-Aufnahmen der Beamten "+c.officers.join(", "):"")),
+               fehlbeweise:(fund&&fund.ohneBodycam)
+                 ?"Bodycam-Aufnahmen des Vorfalls\nZeugenaussagen au\u00dferhalb der abhandelnden Beh\u00f6rde":"",
+               entsch:true },
+
+    gnade:{ art:nimm(antw.art), grund:satz, reue:nimm(antw.reue) },
+
+    loeschung:{ grund:nimm(antw.grund), detail:satz },
+
+    entschaedigung:{ anlass:nimm(antw.anlass), detail:satz, tage:nimm(det.tage,antw.tage) },
+
+    einstweilig:{ gegner:nimm(det.person,antw.gegner), vorfaelle:satz, begehren:nimm(antw.begehren) },
+
+    dienstaufsicht:{ beamter:nimm(det.beamter,antw.beamter,c&&(c.officers||[])[0]),
+                     behoerde:nimm(det.behoerde,antw.behoerde,c&&c.agency),
+                     wann:wannText(), vorwurf:satz },
+
+    anzeige:{ taeter:nimm(det.person,antw.taeter), tat:satz, wann:wannText(), hergang:satz },
+
+    unternehmen:{ firma:nimm(det.firma,antw.firma), zweck:satz,
+                  sitz:nimm(det.haus?"Hausnummer "+det.haus:"",antw.sitz), oath:true },
+
+    familie:{ familyName:nimm(det.familyName,antw.familyName),
+              houseNo:nimm(det.haus,antw.houseNo), oath:true },
+
+    vollmacht:{ umfang:nimm(satz,"Vertretung in allen Straf- und Verwaltungssachen"), bis:nimm(antw.bis) },
+
+    rechnung:{ adressat:nimm(antw.adressat,"Justiz \u2013 Pflichtverteidigung"),
+               bestelltDurch:nimm(det.beamter,antw.bestelltDurch),
+               konto:nimm(antw.konto) }
   };
   return F[tpl]||{};
 }
+
 /* Welche Pflichtfelder bleiben nach dem Lesen offen? */
 function assiOffen(tpl,werte){
   const t=tplOf(tpl)||{};
   return (t.fields||[]).filter(f=>f.req&&f.t!=="check"&&f.t!=="posten"&&!String(werte[f.k]||"").trim());
+}
+
+
+/* Was der Assistent je Vorlage wissen will - steht als Beispiel im Textfeld */
+const ASSI_HILFE={
+  revision:      "Wegen \u00a728 StGB festgenommen. Handschellen um 20:14, die Abhandlung dauerte \u00fcber eine Stunde. Anwalt verlangt, es wurde keiner angerufen. Verh\u00e4ngt 3 Wanteds und 60.000 $. Keine Bodycam.",
+  akte:          "Es geht um die Strafakte vom 21.08. wegen \u00a728 StGB. Ich brauche die Bodycam der SAHP und den Einsatzbericht.",
+  entschaedigung:"Nach erfolgreicher Revision waren 3 Hafteinheiten abgesessen, dazu 60.000 $ Geldstrafe und 2 Tage Dienstausfall.",
+  loeschung:     "Der Eintrag vom 10.08. ist verj\u00e4hrt, die Tat liegt \u00fcber 14 Tage zur\u00fcck.",
+  gnade:         "Die Revisionsfrist ist abgelaufen. Mein Mandant ist Ersttäter und hat den Schaden ersetzt.",
+  dienstaufsicht:"Beamter Mike Ravioli vom LSPD hat meinen Mandanten ohne Grund durchsucht und dabei beleidigt.",
+  anzeige:       "Am 21.08. gegen 19:00 hat T\u00e4ter Max Mustermann meinem Mandanten am Legion Square das Fahrzeug entwendet.",
+  einstweilig:   "Gegner Max Mustermann verfolgt meine Mandantin seit drei Tagen und hat sie zweimal bedroht.",
+  familie:       "Familie Moncler, Hausnummer 12.",
+  unternehmen:   "Firma Cypress & Coast Group, Dachgesellschaft f\u00fcr Handwerksbetriebe, Hausnummer 12.",
+  vollmacht:     "Vertretung in allen Straf- und Verwaltungssachen bis auf Widerruf.",
+  rechnung:      "Rechnung an die Justiz, Pflichtverteidigung, bestellt durch Beamter David Nostra. Zahlung per \u00dcberweisung."
+};
+/* Einzelangaben, die sich aus dem Text ziehen lassen */
+function assiDetails(txt){
+  const T=String(txt||"");
+  const holen=re=>{const m=re.exec(T); return m?String(m[1]||"").trim():"";};
+  return {
+    beamter:   holen(/\bBeamt(?:er|en)\s+([A-Z\u00c4\u00d6\u00dc][\wa-z\u00e4\u00f6\u00fc\u00df-]+(?:\s+[A-Z\u00c4\u00d6\u00dc][\wa-z\u00e4\u00f6\u00fc\u00df-]+)?)/),
+    behoerde:  holen(/\b(LSPD|SAHP|FIB|NG|GOV|EMS)\b/),
+    familyName:holen(/\bFamilie\s+([A-Z\u00c4\u00d6\u00dc][\wa-z\u00e4\u00f6\u00fc\u00df-]+)/),
+    haus:      holen(/\bHausnummer\s+(\d+)/i),
+    firma:     holen(/\b(?:Firma|Unternehmen|Gesellschaft)\s+([A-Z\u00c4\u00d6\u00dc][^,.;\n]{2,40})/),
+    person:    holen(/\b(?:T\u00e4ter|Gegner)\s+([A-Z\u00c4\u00d6\u00dc][\wa-z\u00e4\u00f6\u00fc\u00df-]+(?:\s+[A-Z\u00c4\u00d6\u00dc][\wa-z\u00e4\u00f6\u00fc\u00df-]+)?)/),
+    tage:      holen(/(\d+)\s*Tage?\s*Dienstausfall/i),
+    ort:       holen(/\bam\s+([A-Z\u00c4\u00d6\u00dc][\wa-z\u00e4\u00f6\u00fc\u00df -]{3,28}?)\s+(?:das|die|der|ein|sein)/)
+  };
+}
+/* Werte fuer genau diese Vorlage aus einer Schilderung */
+function assiWerte(tpl,txt,c){
+  const fund=assiLesen(txt,c), det=assiDetails(txt);
+  if(c&&Object.keys(fund.fehler).length){ c.errors=Object.assign({},c.errors,fund.fehler); save(); }
+  return {fund,det,werte:Object.assign({},assiFelder(tpl,{txt,c,fund,antw:{}}),{
+    beamter:det.beamter, behoerde:det.behoerde||(c&&c.agency)||"",
+    familyName:det.familyName, houseNo:det.haus, firma:det.firma,
+    taeter:det.person, gegner:det.person, tage:det.tage, tatort:det.ort,
+    sitz:det.haus?"Hausnummer "+det.haus:"", tatzeit:fund.datum||(c&&c.date)||""
+  })};
 }
 
 function mAssistent(preset){
