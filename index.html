@@ -2016,6 +2016,68 @@ BEWEISMITTEL
 
 Nach § 13 Abs. 7 BGB gelten die Bestimmungen der StPO analog. Eine Abschrift dieser Klageschrift ist der Beklagtenseite nach § 63 StPO analog zuzuleiten.`},
 
+ladung:{lbl:"Zeugenladung zur Hauptverhandlung",kurz:"ZL",ico:"📨",phase:"weitere",
+  wann:"Sobald der Termin steht. Mindestens 24 Stunden vor der Verhandlung zustellen – die Liste geht spätestens 3 Stunden vorher ans Gericht.",
+  an:"An {zeuge}\n– persönlich, zur Ladung als Zeuge –",
+  fee:"antrag",ref:"§§ 52, 55, 56 StPO",
+  anMap:{"Gericht – verbindliche Zeugenliste":"An den vorsitzenden Richter\ndes Gerichts des Staates San Andreas"},
+  adrFeld:"empfaenger",
+  hinweis:"§52 II StPO: die Verteidigung lädt ihre Zeugen selbst. §52 III: mindestens 24 Stunden zwischen Zustellung und Verhandlung. §52 IV: die verbindliche Liste muss spätestens 3 Stunden vor Beginn beim Richter liegen. §52 V: eine nachträgliche Ladung nach Verfahrensbeginn ist unzulässig. §55 II: die Ladung muss die Belehrung über die Folgen des Fernbleibens enthalten.",
+  betreff:"{gericht?Verbindliche Zeugenliste}{anzeuge?Ladung als {rolle}} – {verfahren}",
+  fields:[
+    {k:"empfaenger",l:"Schreiben geht an",t:"select",def:"Zeuge",
+      opts:["Zeuge","Gericht – verbindliche Zeugenliste"],
+      hint:"Erst jede Person einzeln laden, dann dieselbe Vorlage einmal als Liste ans Gericht"},
+    {k:"verfahren",l:"Verfahren",t:"text",req:1,hint:"Bezeichnung oder Aktenzeichen, z. B. „Klage Macher ./. Banks“"},
+    {k:"zeuge",l:"Zu ladende Person",t:"text",hint:"Name und Telefonnummer – nur bei der Ladung an den Zeugen"},
+    {k:"rolle",l:"In der Eigenschaft als",t:"select",def:"Zeuge",opts:["Zeuge","Sachverständiger"]},
+    {k:"termin",l:"Tag der Verhandlung",t:"date",req:1},
+    {k:"uhrzeit",l:"Uhrzeit",t:"text",req:1,hint:"z. B. 20:30"},
+    {k:"ort",l:"Ort",t:"text",req:1,hint:"z. B. Gerichtssaal im Regierungsgebäude Los Santos"},
+    {k:"thema",l:"Gegenstand der Vernehmung",t:"area",
+      hint:"worüber ausgesagt werden soll – hilft der Person, sich vorzubereiten"},
+    {k:"zeugen",l:"Zeugenliste für das Gericht",t:"area",
+      hint:"eine Person je Zeile, mit Telefonnummer – nur für das Schreiben ans Gericht (§52 IV)"},
+    {k:"nachtrag",l:"Ausnahme für eine nachträgliche Ladung beantragen",t:"check",
+      hint:"§52 V StPO – nur der vorsitzende Richter kann sie zulassen"}],
+  text:`{anzeuge?in dem Verfahren {verfahren} lade ich Sie hiermit gemäß § 52 Abs. 2 StPO als {rolle} zur Hauptverhandlung.}
+
+{gericht?in dem Verfahren {verfahren} lege ich gemäß § 52 Abs. 4 StPO die verbindliche Liste der von mir geladenen Zeugen und Sachverständigen vor.}
+
+{anzeuge?TERMIN}
+
+{anzeuge?Tag und Uhrzeit: {termin_lang}}
+
+{anzeuge?Ort: {ort}}
+
+{thema?GEGENSTAND DER VERNEHMUNG}
+
+{thema?{thema}}
+
+{gericht?GELADENE ZEUGEN UND SACHVERSTÄNDIGE}
+
+{liste:zeugen|gericht}
+
+{gericht?Sämtliche vorgenannten Personen wurden nach § 52 Abs. 2 StPO geladen, unter Einhaltung der Frist von mindestens 24 Stunden zwischen Zustellung und Hauptverhandlung (§ 52 Abs. 3 StPO), und über die Folgen des Ausbleibens nach § 55 Abs. 2 StPO belehrt. Die Verhandlung findet am {termin_lang} in {ort} statt.}
+
+{gericht?Diese Liste geht spätestens drei Stunden vor Beginn des Verfahrens ein. Ich bitte um Offenlegung gegenüber der jeweils anderen Partei spätestens zwei Stunden vor Prozessbeginn (§ 52 Abs. 4 StPO).}
+
+{nachtrag?Ergänzend beantrage ich, die nachträgliche Ladung der vorbezeichneten Person ausnahmsweise zuzulassen. Nach § 52 Abs. 5 StPO ist eine nachträgliche Ladung nach Beginn des Verfahrens unzulässig; die Anordnung einer Ausnahme obliegt allein dem vorsitzenden Richter. Die Vernehmung ist zur Aufklärung des Sachverhalts erforderlich, weil sich die Erforderlichkeit erst im Verlauf des Verfahrens ergeben hat.}
+
+{anzeuge?BELEHRUNG}
+
+{anzeuge?Diese Ladung enthält den nach § 55 Abs. 2 StPO vorgeschriebenen Hinweis. Sie sind nach § 55 Abs. 1 StPO verpflichtet, zu dem genannten Termin vor dem Richter zu erscheinen und auszusagen, soweit keine gesetzlich zugelassene Ausnahme vorliegt.}
+
+{anzeuge?Erscheinen Sie unentschuldigt nicht, können gegen Sie ein Bußgeld oder Ordnungshaft verhängt sowie Ihre zwangsweise Vorführung durch Beamte angeordnet werden (§ 56 Abs. 1 StPO). Nach § 52 Abs. 6 StPO darf zudem exekutiv mit Suchwanteds nach Ihnen gesucht werden; wer einer Ladung ohne Abmeldung fernbleibt, macht sich der Behinderung von Ermittlungsverfahren strafbar.}
+
+{anzeuge?Eine Abmeldung hat spätestens 24 Stunden vor dem Termin zu erfolgen (§ 52 Abs. 7 StPO); eine Entschuldigung ist spätestens zwei Stunden vor Prozessbeginn schriftlich beim vorsitzenden Richter einzureichen (§ 56 Abs. 2 StPO). Wird das Fernbleiben nachträglich genügend entschuldigt, werden die getroffenen Anordnungen aufgehoben (§ 56 Abs. 3 StPO).}
+
+{anzeuge?Zur Verweigerung des Zeugnisses sind nach § 58 StPO der Ehepartner des Beschuldigten sowie in gerader Linie Verwandte und Verschwägerte berechtigt, nach § 59 StPO ferner Ärzte sowie Anwälte und Psychologen, die einer Schweigepflicht unterliegen. Beamte sind hiervon in dienstlichen Angelegenheiten ausgenommen (§ 59 Abs. 3 StPO).}
+
+{anzeuge?Vor der Vernehmung werden Sie nach § 61 StPO zur wahrheitsgemäßen Aussage ermahnt. Bei einer Falschaussage machen Sie sich des Meineids strafbar.}
+
+{anzeuge?Diese Ladung wird Ihnen unter Einhaltung der Frist des § 52 Abs. 3 StPO von mindestens 24 Stunden vor der Hauptverhandlung zugestellt. Für Rückfragen erreichen Sie mich unter der oben genannten Telefonnummer.}`},
+
 familie:{lbl:"Antrag auf eine Familienlizenz",kurz:"FL",ico:"👪",phase:"weitere",wann:"Familiengründung. Eidesstattliche Versicherung nimmst du selbst ab.",
   an:"An die Justiz des Staates San Andreas",fee:"familie",ref:"§7 RAVO",oath:1,
   hinweis:"Der Familienname darf keine eindeutige Assoziation mit kriminellen Aktivitäten in San Andreas haben (§7 V RAVO).",
@@ -2084,7 +2146,7 @@ Sämtliche Positionen halten die Höchstsätze der RAVO ein und sind nach § 3 A
 {privat?Ich bitte um Ausgleich der Rechnung und danke für Ihr Vertrauen.}{pflicht?Für Rückfragen zu einzelnen Positionen stehe ich zur Verfügung. Die Akte kann auf Anforderung nach § 3 Abs. 6 RAVO eingesehen werden.}`}
 };
 const TPL_STD=JSON.parse(JSON.stringify(TPL));
-const TPL_KEYS_STD=["vollmacht","akte","revision","gnade","loeschung","entschaedigung","dienstaufsicht","anzeige","einstweilig","klage","familie","unternehmen","marke","rechnung"];
+const TPL_KEYS_STD=["vollmacht","akte","revision","gnade","loeschung","entschaedigung","dienstaufsicht","anzeige","einstweilig","klage","ladung","familie","unternehmen","marke","rechnung"];
 /* Wofür man welchen Schriftsatz nimmt – gruppiert nach dem Zeitpunkt im Mandat */
 const PHASEN=[
   {k:"start",  lbl:"1 · Mandat annehmen und Akte sichern"},
@@ -2142,6 +2204,12 @@ function tplWerte(t,d,x){
     /* Ein Schliessdienst beruehrt Paragraf 32 StGB - darauf geht der Antrag von selbst ein */
     const alles=[d.firma,d.zweck,d.toechter].join(" ");
     v.dietrich=/schl\u00fcssel|schliess|schlie\u00df|locksmith|schloss/i.test(alles)?"ja":"";
+  }
+  /* Zeugenladung: dieselbe Vorlage an den Zeugen oder als Liste ans Gericht */
+  if(t.fields&&t.fields.some(f=>f.k==="zeuge")){
+    v.gericht=/Gericht/i.test(String(d.empfaenger||""))?"ja":"";
+    v.anzeuge=v.gericht?"":"ja";
+    v.termin_lang=[d.termin?dateDE(d.termin):"",d.uhrzeit?d.uhrzeit+" Uhr":""].filter(Boolean).join(", ");
   }
   /* Klageschrift: der Streitgegenstand steuert die Begruendung */
   if(t.fields&&t.fields.some(f=>f.k==="beklagte")){
@@ -2279,8 +2347,10 @@ function toechterListe(d){
   });
 }
 function tplBlock(zeile,d,x,v){
-  let m=/^\{liste:(\w+)\}$/.exec(zeile);
+  /* {liste:feld} - mit {liste:feld|flagge} nur, wenn die Flagge gesetzt ist */
+  let m=/^\{liste:(\w+)(?:\|(\w+))?\}$/.exec(zeile);
   if(m){
+    if(m[2]&&!(v&&v[m[2]])) return "";
     const items=String(d[m[1]]||"").split(/\n+/).filter(z=>z.trim());
     return items.length?'<ol class="gr">'+items.map(z=>'<li>'+esc(z)+'</li>').join("")+'</ol>':"";
   }
@@ -2404,7 +2474,7 @@ function docHtml(d){
   /* Vorlagen k\u00f6nnen Empf\u00e4nger und Anrede von einem Auswahlfeld abh\u00e4ngig machen */
   const wahl=t.adrFeld?String(d[t.adrFeld]||""):"";
   const anWahl=(t.anMap||{})[wahl], anredeWahl=(t.anredeMap||{})[wahl];
-  const empf=String(d.eigenerEmpf||anWahl||t.an||"").split("\n").map(z=>esc(z)).join("<br>");
+  const empf=fillTpl(String(d.eigenerEmpf||anWahl||t.an||""),v).split("\n").map(z=>esc(z)).join("<br>");
   const anrede=anredeWahl!==undefined?anredeWahl:(t.anrede!==undefined?t.anrede:"Sehr geehrte Damen und Herren,");
   const absender=[p.name,p.pass?"Reisepass-Nr. "+p.pass:"",p.phone?"Tel. "+p.phone:""].filter(Boolean).join(" · ");
   /* Ein für diesen Schriftsatz angepasster Text geht der Vorlage vor */
