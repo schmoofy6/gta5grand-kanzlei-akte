@@ -525,11 +525,14 @@ function exRefs(entry){
 const RAVO={
   beratung: {lbl:"Beratung des Mandanten",              max:25000,  per:15, unit:"je angefangene 15 Min.", ref:"RAVO §4 II a"},
   gericht:  {lbl:"Verteidigung vor Gericht / Revision", max:115000, per:30, unit:"je angefangene 30 Min.", ref:"RAVO §4 II b"},
-  schnell:  {lbl:"Verteidigung im Schnellverfahren",    max:125000, per:30, unit:"je angefangene 30 Min.", ref:"RAVO §4 II f"},
+  schnell:  {lbl:"Verteidigung im Schnellverfahren",    max:125000, per:30, unit:"je angefangene 30 Min.", ref:"RAVO §4 II f", erstattbar:1},
   revision: {lbl:"Schriftlicher Revisionsantrag",       max:125000, per:0,  unit:"Pauschale",              ref:"RAVO §4 II c"},
   familie:  {lbl:"Antrag auf Familiengründung",         max:75000,  per:0,  unit:"Pauschale",              ref:"RAVO §4 II d"},
   antrag:   {lbl:"Sonstiger schriftlicher Antrag",      max:100000, per:0,  unit:"Pauschale",              ref:"RAVO §4 II e"}
 };
+/* §23 V StPO erstattet die Strafe. Anwaltskosten ersetzt die Justiz in der Praxis
+   nur für die Verteidigung im Schnellverfahren, nicht für schriftliche Anträge. */
+const erstattbar=f=>!!(RAVO[f&&f.type]||{}).erstattbar;
 const RAVO_BUSSE_MAX=300000;      /* RAVO §10 III */
 const WANTED_WERT=20000;          /* StPO §3 VI und VIII: 1 Hafteinheit = 20.000 $ */
 const KAUTION_FAKTOR=2;           /* StPO §22 II: 200 % der Wanteds */
@@ -1160,7 +1163,8 @@ function catSum(charges){
 /* Ersatzfreiheitsstrafe §3 VI StPO: je angefangene 20.000 $ = 1 Hafteinheit */
 const ersatzHaft=fine=>Math.ceil(Math.max(0,Number(fine)||0)/WANTED_WERT);
 /* Entschädigung §23 V StPO */
-const entschaedigung=c=>(c.final?.stars||0)*ENTSCHAEDIGUNG_JE_HE+(c.final?.fine||0)+feeTotal(c);
+const entschaedigung=c=>(c.final?.stars||0)*ENTSCHAEDIGUNG_JE_HE+(c.final?.fine||0)
+                        +summe(caseFees(c).filter(erstattbar));
 
 /* --- RAVO §4: Höchstbetrag einer Leistungsposition --- */
 /* Höchstsatz einer Leistung – eigene Werte aus den Einstellungen gehen vor (§4 IV RAVO) */
@@ -1658,7 +1662,7 @@ revision:{lbl:"Revisionsantrag",kurz:"RA",ico:"⚖️",phase:"angriff",wann:"Bei
     {k:"antraege",l:"Zusätzliche Anträge (optional)",t:"area",
      hint:"Feststellung, Aufhebung, Löschung und Erstattung stehen bereits automatisch im Katalog"},
     {k:"entsch",l:"Erstattung nach §23 V StPO mitbeantragen",t:"check",def:1,
-     hint:"Haft, Geldstrafe, Anwaltskosten des Verfahrens und dieses Antrags – wird unten aufgeschlüsselt"},
+     hint:"Hafteinheiten und Geldstrafe – Anwaltskosten nur aus der Verteidigung im Schnellverfahren, schriftliche Anträge werden nicht erstattet"},
     {k:"tage",l:"Tage Dienstausfall (optional)",t:"num",hint:"§23 III StPO – höchstens 50.000 $ pro Tag"}],
   text:`namens und in Vollmacht meiner Mandantschaft {mandant}, Reisepass-Nummer {reisepass}, Telefon-Nummer {telefon}, lege ich gegen die am {tatdatum} ergangene Verurteilung wegen {vorwuerfe} gemäß §§ 39, 41 StPO fristgerecht Revision ein.
 
@@ -1751,7 +1755,7 @@ Aus den vorstehenden Gründen beantrage ich:
 
 entschaedigung:{lbl:"Antrag auf Entschädigung",kurz:"EN",ico:"💵",phase:"danach",wann:"Nur ohne laufende Revision – dort ist die Erstattung bereits enthalten.",
   an:"An die Richterschaft des Staates San Andreas",fee:"antrag",ref:"§23 StPO",caseRef:1,
-  hinweis:"Je abgesessener Hafteinheit 25.000 $, dazu die volle Geldstrafe und die Anwaltskosten (§23 V StPO). Bei Dienstausfall höchstens 50.000 $ pro Tag (§23 III).",
+  hinweis:"Je abgesessener Hafteinheit 25.000 $ und die volle Geldstrafe (§23 V StPO). Von den Anwaltskosten erstattet die Justiz nur die Verteidigung im Schnellverfahren, nicht die schriftlichen Anträge. Bei Dienstausfall höchstens 50.000 $ pro Tag (§23 III).",
   betreff:"Antrag auf Entschädigung nach § 23 StPO",
   fields:[
     {k:"anlass",l:"Anlass",t:"select",req:1,
@@ -2285,20 +2289,18 @@ function datenBlock(d,x){
   return '<table class="kopfdaten">'+zeilen.map(z=>
     '<tr><td>'+esc(z[0])+'</td><td><b>'+esc(z[1]||"—")+'</b></td></tr>').join("")+'</table>';
 }
-/* Forderung nach §23 V StPO: Haft, Geldstrafe, Anwaltskosten des Verfahrens
-   und die Gebühr dieses Schriftsatzes, dazu ein etwaiger Dienstausfall.     */
+/* Forderung nach §23 V StPO: Hafteinheiten und Geldstrafe, dazu ein etwaiger
+   Dienstausfall. Anwaltskosten nur, soweit sie erstattungsfähig sind.       */
 function forderung(d,c){
   const he=(c&&c.final&&c.final.stars)||0, geld=(c&&c.final&&c.final.fine)||0;
-  const eigen=+d.fee||0, tage=+d.tage||0;
-  const posten=c?caseFees(c,d.id):[];
-  const fall=summe(posten.filter(f=>f.src==="fall"));
+  const tage=+d.tage||0;
+  /* Gefordert wird die Strafe. Von den Anwaltskosten ist nur die Verteidigung
+     im Schnellverfahren erstattungsfähig - schriftliche Anträge sind es nicht. */
+  const posten=c?caseFees(c,d.id).filter(erstattbar):[];
   const rows=[];
   if(he)     rows.push([he+" abgesessene Hafteinheiten à "+money(ENTSCHAEDIGUNG_JE_HE), he*ENTSCHAEDIGUNG_JE_HE]);
   if(geld)   rows.push(["Rückerstattung der verhängten Geldstrafe", geld]);
-  if(fall)   rows.push(["Anwaltskosten im Ausgangsverfahren", fall]);
-  posten.filter(f=>f.src==="doc").forEach(f=>
-    rows.push([f.desc+(f.date?" vom "+dateDE(f.date):""), +f.amount||0]));
-  if(eigen)  rows.push(["Anwaltskosten für diesen Schriftsatz", eigen]);
+  posten.forEach(f=>rows.push([(RAVO[f.type]||{lbl:f.type}).lbl+(f.date?" vom "+dateDE(f.date):""), +f.amount||0]));
   if(tage)   rows.push([tage+" Tage Dienstausfall à bis zu "+money(50000), tage*50000]);
   if(!rows.length) rows.push(["keine bezifferbare Forderung", 0]);
   return {rows, summe:rows.reduce((a,r)=>a+r[1],0)};
@@ -3803,7 +3805,8 @@ function lawFristen(){
     ["Kaution","200 % der Wanteds, zzgl. Gebühr beim Wärter","§22 II StPO"],
     ["Keine Kaution","ab 4 Hafteinheiten","§22 III StPO"],
     ["Ordnungswidrigkeiten","ergeben keine Hafteinheiten","§3 V StPO"],
-    ["Entschädigung nach Revision","25.000 $ je abgesessener Hafteinheit + volle Geldstrafe + Anwaltskosten","§23 V StPO"],
+    ["Entschädigung nach Revision","25.000 $ je abgesessener Hafteinheit + volle Geldstrafe","§23 V StPO"],
+    ["Anwaltskosten erstattungsfähig","nur die Verteidigung im Schnellverfahren, keine schriftlichen Anträge","§23 V StPO"],
     ["Entschädigung bei Dienstausfall","höchstens 50.000 $ pro Tag","§23 III StPO"],
     ["Ordnungsgeld des Richters","höchstens 100.000 $ je Verhängung","§47 V StPO"],
     ["Kronzeuge","Milderung bis zur Hälfte, nicht bei §25, §45, §49 StGB","§88 StPO"],
@@ -4144,8 +4147,8 @@ function mCase(id,presetClient){
         <div class="box info">
           <b>Kaution (§22 StPO):</b> ${fs>KAUTION_MAX_HE?'nicht möglich – ab 4 Hafteinheiten ausgeschlossen (§22 III)':money(fs*WANTED_WERT*KAUTION_FAKTOR)+' = 200 % der '+fs+' Wanteds, zzgl. Gebühr beim Wärter'}<br>
           <b>Ersatzfreiheitsstrafe (§3 VI):</b> ${ff?ersatzHaft(ff)+" ⭐, falls der Mandant die "+money(ff)+" nicht zahlen kann":"keine Geldstrafe erfasst"}<br>
-          <b>Entschädigung bei erfolgreicher Revision (§23 V):</b> ${money(fs*ENTSCHAEDIGUNG_JE_HE+ff+fees.reduce((a,f)=>a+(+f.amount||0),0))}
-          <span class="muted">(${fs} ⭐ × ${money(ENTSCHAEDIGUNG_JE_HE)} + Geldstrafe + Anwaltskosten)</span>
+          <b>Entschädigung bei erfolgreicher Revision (§23 V):</b> ${money(fs*ENTSCHAEDIGUNG_JE_HE+ff+summe(fees.filter(erstattbar)))}
+          <span class="muted">(${fs} ⭐ × ${money(ENTSCHAEDIGUNG_JE_HE)} + Geldstrafe${summe(fees.filter(erstattbar))?" + Verteidigung im Schnellverfahren":""}) – schriftliche Anträge werden nicht erstattet</span>
         </div>
       </div>`;
   };
