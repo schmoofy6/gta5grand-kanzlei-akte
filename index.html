@@ -1947,6 +1947,75 @@ Das Zeichen verletzt kein bestehendes Namensrecht Dritter im Sinne des § 3 BGB.
 
 Ich bitte um Eintragung des Schutzrechts, um schriftliche Bestätigung mit Angabe des Eintragungsdatums sowie um Mitteilung, welche weiteren Unterlagen die Wirtschaftsverwaltung benötigt.`},
 
+klage:{lbl:"Klageschrift vor dem Zivilgericht",kurz:"KL",ico:"🏛️",phase:"weitere",
+  wann:"Wenn sich eine zivilrechtliche Sache außergerichtlich nicht klären lässt. §13 BGB – jede Partei darf das Zivilgericht jederzeit anrufen.",
+  an:"An das Zivilgericht des Staates San Andreas\n– über die Justiz –",
+  fee:"gericht",ref:"§13 BGB",
+  hinweis:"§13 I und III BGB: jede Partei kann das Zivilgericht jederzeit anrufen. §13 VII: es gelten die Bestimmungen der StPO analog – die Klageschrift muss daher nach §63 StPO den Sachverhalt und die rechtlichen Grundlagen genau bezeichnen. Das Urteil ist nach §13 V endgültig und bindend.",
+  betreff:"Klage {mandant} ./. {beklagte}{streit_kurz}",
+  fields:[
+    {k:"beklagte",l:"Beklagte Partei",t:"text",req:1,hint:"Name und, falls bekannt, Reisepassnummer – bei mehreren durch Komma trennen"},
+    {k:"gegenstand",l:"Streitgegenstand",t:"select",def:"Namensrecht (§3 BGB)",
+      opts:["Namensrecht (§3 BGB)","Vertrag oder Zahlung","Arbeitsrecht","Schadensersatz","Sonstiges"],
+      hint:"steuert die rechtliche Begründung und die vorgeschlagenen Anträge"},
+    {k:"zeichen",l:"Betroffener Name oder Vertragsgegenstand",t:"text",
+      hint:"bei Namensrecht: der Name, um den gestritten wird"},
+    {k:"eintragung",l:"Eingetragen bei der Regierung am (optional)",t:"date",
+      hint:"§12 BGB – die Eintragung belegt die zeitliche Priorität"},
+    {k:"sachverhalt",l:"Sachverhalt",t:"area",req:1,
+      hint:"was geschehen ist, mit Datum, Ort und Beteiligten – sachlich, ohne Wertung"},
+    {k:"schaden",l:"Worin die Beeinträchtigung liegt",t:"area",
+      hint:"z. B. Verwechslungsgefahr, Rufschaden, entgangene Aufträge"},
+    {k:"betrag",l:"Geforderter Betrag ($, optional)",t:"number",hint:"leer lassen, wenn es nur um Unterlassung geht"},
+    {k:"antraege",l:"Weitere Klageanträge (optional)",t:"area",
+      hint:"einer je Zeile – die Anträge zum gewählten Streitgegenstand stehen schon drin"},
+    {k:"kosten",l:"Kostenantrag stellen",t:"check",def:1,
+      hint:"die Kosten des Verfahrens und die Anwaltskosten der Gegenseite auferlegen"},
+    {k:"beweise",l:"Beweismittel",t:"area",req:1,
+      hint:"eine Zeile je Beweis – Eintragungsurkunde, Aufnahmen, Screenshots, Verträge"},
+    {k:"zeugen",l:"Zeugen (optional)",t:"area",hint:"eine Person je Zeile, mit Telefonnummer – Ladung nach §52 II StPO"},
+    {k:"schlichtung",l:"Außergerichtliche Einigung wurde versucht",t:"check",
+      hint:"§13 VI BGB – das Gericht kann Schlichtung vorschlagen; ein Versuch macht sich gut"},
+    {k:"termin",l:"Um Anberaumung eines Verhandlungstermins wird gebeten",t:"check",def:1,
+      hint:"§64 StPO analog – der Vorsitzende beraumt den Termin an"}],
+  text:`namens und in Vollmacht meiner Mandantschaft {mandant}, Reisepass-Nummer {reisepass}, Telefon-Nummer {telefon}, erhebe ich gemäß § 13 BGB Klage vor dem Zivilgericht des Staates San Andreas gegen {beklagte}.
+
+KLAGEANTRÄGE
+
+Ich beantrage, das Gericht möge erkennen:
+
+{antraege}
+
+SACHVERHALT
+
+{sachverhalt}
+
+{schaden?BEEINTRÄCHTIGUNG}
+
+{schaden?{schaden}}
+
+RECHTLICHE WÜRDIGUNG
+
+Nach § 13 Abs. 1 BGB können alle offenen zivilrechtlichen Angelegenheiten vor einem Zivilgericht geklärt werden; nach § 13 Abs. 3 BGB steht jeder Partei das uneingeschränkte Recht zu, das Gericht jederzeit anzurufen. Die Zuständigkeit des Zivilgerichts ist damit gegeben.
+
+{namensrecht?Nach § 3 Abs. 1 BGB kann der Berechtigte von demjenigen, der unbefugt denselben Namen gebraucht, die Beseitigung der Beeinträchtigung verlangen; sind weitere Beeinträchtigungen zu besorgen, kann er auf Unterlassung klagen. Über die Unzulässigkeit entscheidet nach § 3 Abs. 2 BGB ausschließlich ein Gericht – die Klage ist daher der gesetzlich vorgesehene Weg.}
+
+{eintragung?Die Berechtigung meiner Mandantschaft ergibt sich aus der Eintragung des Namens {zeichen} bei der Regierung vom {eintragung} nach § 12 Abs. 1 BGB. Die Eintragung erfasst nach § 12 Abs. 2 BGB ausdrücklich auch Handelsnamen und begründet die zeitliche Priorität gegenüber der späteren Benutzung durch die Beklagtenseite.}
+
+BEWEISMITTEL
+
+{liste:beweise}
+
+{zeugen?ZEUGEN}
+
+{liste:zeugen}
+
+{schlichtung?Eine außergerichtliche Einigung wurde erfolglos versucht. Meine Mandantschaft bleibt gleichwohl zu einer Schlichtung nach § 13 Abs. 6 BGB bereit.}
+
+{termin?Ich bitte um Anberaumung eines Verhandlungstermins und um Ladung der Parteien. Zwischen Zustellung der Ladung und der Verhandlung ist nach § 52 Abs. 3 StPO analog eine Frist von mindestens 24 Stunden einzuhalten. Die Liste der von mir geladenen Zeugen reiche ich nach § 52 Abs. 4 StPO analog spätestens drei Stunden vor Verfahrensbeginn ein.}
+
+Nach § 13 Abs. 7 BGB gelten die Bestimmungen der StPO analog. Eine Abschrift dieser Klageschrift ist der Beklagtenseite nach § 63 StPO analog zuzuleiten.`},
+
 familie:{lbl:"Antrag auf eine Familienlizenz",kurz:"FL",ico:"👪",phase:"weitere",wann:"Familiengründung. Eidesstattliche Versicherung nimmst du selbst ab.",
   an:"An die Justiz des Staates San Andreas",fee:"familie",ref:"§7 RAVO",oath:1,
   hinweis:"Der Familienname darf keine eindeutige Assoziation mit kriminellen Aktivitäten in San Andreas haben (§7 V RAVO).",
@@ -2015,7 +2084,7 @@ Sämtliche Positionen halten die Höchstsätze der RAVO ein und sind nach § 3 A
 {privat?Ich bitte um Ausgleich der Rechnung und danke für Ihr Vertrauen.}{pflicht?Für Rückfragen zu einzelnen Positionen stehe ich zur Verfügung. Die Akte kann auf Anforderung nach § 3 Abs. 6 RAVO eingesehen werden.}`}
 };
 const TPL_STD=JSON.parse(JSON.stringify(TPL));
-const TPL_KEYS_STD=["vollmacht","akte","revision","gnade","loeschung","entschaedigung","dienstaufsicht","anzeige","einstweilig","familie","unternehmen","marke","rechnung"];
+const TPL_KEYS_STD=["vollmacht","akte","revision","gnade","loeschung","entschaedigung","dienstaufsicht","anzeige","einstweilig","klage","familie","unternehmen","marke","rechnung"];
 /* Wofür man welchen Schriftsatz nimmt – gruppiert nach dem Zeitpunkt im Mandat */
 const PHASEN=[
   {k:"start",  lbl:"1 · Mandat annehmen und Akte sichern"},
@@ -2073,6 +2142,11 @@ function tplWerte(t,d,x){
     /* Ein Schliessdienst beruehrt Paragraf 32 StGB - darauf geht der Antrag von selbst ein */
     const alles=[d.firma,d.zweck,d.toechter].join(" ");
     v.dietrich=/schl\u00fcssel|schliess|schlie\u00df|locksmith|schloss/i.test(alles)?"ja":"";
+  }
+  /* Klageschrift: der Streitgegenstand steuert die Begruendung */
+  if(t.fields&&t.fields.some(f=>f.k==="beklagte")){
+    v.namensrecht=/Namensrecht/i.test(String(d.gegenstand||""))?"ja":"";
+    v.streit_kurz=d.zeichen?" – "+d.zeichen:"";
   }
   if(t.adrFeld){
     const gewaehlt=String(d[t.adrFeld]||"");
@@ -2177,8 +2251,21 @@ function antragsKatalog(d,x){
     a.push("bei hinreichendem Verdacht ein Verfahren nach § 22 StGB einzuleiten (§ 15 Abs. 4 BDG)");
   }else if(d.type==="gnade"){
     a.push("im Wege der Gnade "+String(d.art||"eine Gnadenentscheidung").toLowerCase()+" zu gewähren (§ 32 StPO)");
+  }else if(d.type==="klage"){
+    const geg=(d.beklagte||"die Beklagtenseite").trim(), nm=(d.zeichen||"").trim();
+    if(/Namensrecht/i.test(String(d.gegenstand||""))){
+      a.push("festzustellen, dass "+geg+" nicht berechtigt ist, den Namen „"+(nm||"des Klägers")+"“ zu führen oder zu verwenden");
+      a.push(geg+" zu verurteilen, jede Verwendung dieses Namens künftig zu unterlassen (§ 3 Abs. 1 BGB)");
+      a.push(geg+" zu verurteilen, die eingetretene Beeinträchtigung zu beseitigen, insbesondere sämtliche Beschriftungen, Aushänge, Fahrzeugkennzeichnungen und öffentlichen Auftritte unter diesem Namen zu entfernen");
+      a.push("festzustellen, dass zwischen meiner Mandantschaft und "+geg+" keinerlei geschäftliche oder persönliche Verbindung besteht");
+    }
+    if(+d.betrag) a.push(geg+" zu verurteilen, an meine Mandantschaft "+money(d.betrag)+" zu zahlen");
   }
   (String(d.antraege||"").split(/\n+/).filter(z=>z.trim())).forEach(z=>a.push(z.trim().replace(/[,.]$/,"")));
+  /* Der Kostenantrag steht immer am Ende */
+  if(d.type==="klage"&&d.kosten)
+    a.push("die Kosten des Verfahrens einschließlich der notwendigen Auslagen und Anwaltskosten der Klägerseite "+
+           ((d.beklagte||"der Beklagtenseite").trim())+" aufzuerlegen");
   if(!a.length) return "";
   return '<ol class="gr">'+a.map((z,i)=>'<li>'+esc(z)+(i===a.length-1?".":",")+'</li>').join("")+'</ol>';
 }
