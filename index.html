@@ -148,11 +148,13 @@ button.pill:hover{filter:brightness(1.25)}
 .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--tx2);margin-top:14px}
 .legend b{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px}
 .legend span.click{cursor:pointer}.legend span.click:hover{color:var(--tx)}
-.chart{display:flex;align-items:flex-end;gap:6px;height:150px;padding-top:10px}
-.chart .col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;min-width:14px}
-.chart .col .seg{border-radius:2px}
-.chart-x{display:flex;gap:6px;margin-top:6px}
-.chart-x span{flex:1;text-align:center;font-size:10px;color:var(--tx3);min-width:14px}
+.calc .line.click{cursor:pointer;border-radius:6px;margin:0 -6px;padding-left:6px;padding-right:6px}
+.calc .line.click:hover{background:var(--card2)}
+.formstrip{display:flex;gap:4px;margin-top:12px}
+.formstrip i{flex:1;height:9px;border-radius:3px;cursor:pointer;opacity:.9}
+.formstrip i:hover{opacity:1;transform:scaleY(1.35)}
+.formstrip i.ok{background:var(--ok)} .formstrip i.warn{background:var(--warn)}
+.formstrip i.bad{background:var(--bad)} .formstrip i.neutral{background:var(--neutral)}
 
 .overlay{position:fixed;inset:0;background:rgba(3,6,12,.6);backdrop-filter:blur(4px);z-index:50;animation:einblenden .14s ease-out;
   display:flex;align-items:flex-start;justify-content:center;padding:34px 16px;overflow:auto}
@@ -1298,10 +1300,10 @@ function groupBy(list,field){
 function allFees(){
   const out=[];
   DB.cases.forEach(c=>(c.fees||[]).forEach(f=>
-    out.push({...f,src:"case",srcId:c.id,ref:c.caseNo||"",lawyerId:c.lawyerId,client:client(c.clientId)})));
+    out.push({...f,src:"case",srcId:c.id,ref:c.caseNo||"",lawyerId:c.lawyerId,clientId:c.clientId,client:client(c.clientId)})));
   /* Rechnungen bleiben außen vor – sie fassen bereits erfasste Leistungen nur zusammen */
   DB.docs.forEach(l=>{ if(l.fee&&l.type!=="rechnung")
-    out.push({id:l.id,src:"doc",srcId:l.id,ref:l.no||"",type:(TPL[l.type]||{}).fee||"antrag",qty:1,
+    out.push({id:l.id,src:"doc",srcId:l.id,ref:l.no||"",type:(TPL[l.type]||{}).fee||"antrag",qty:1,clientId:l.clientId,
               amount:l.fee,paid:!!l.paid,abgeschrieben:!!l.abgeschrieben,probono:!!l.probono,date:l.date||"",lawyerId:l.lawyerId,
               desc:(TPL[l.type]||{}).lbl||l.type,
               client:client(l.clientId)||{name:l.extName||"",phone:l.extPhone||"",pass:l.extPass||""}}); });
@@ -1315,11 +1317,18 @@ function allFees(){
     const bez=w.hat>=w.soll, abg=l.status==="rejected"||!!l.abgeschrieben;
     const pos=(l.posten||[]).filter(p=>(+p.amount||0)>0);
     (pos.length?pos:[{type:"antrag",qty:1,amount:w.soll,date:l.date,desc:"Rechnungsbetrag"}]).forEach((p,i)=>
-      out.push({id:l.id+"-"+i,src:"doc",srcId:l.id,ref:l.no||"",type:p.type||"antrag",qty:p.qty||1,
+      out.push({id:l.id+"-"+i,src:"doc",srcId:l.id,ref:l.no||"",type:p.type||"antrag",qty:p.qty||1,clientId:l.clientId,
                 amount:+p.amount||0,paid:bez,abgeschrieben:abg,probono:!!p.probono,
                 date:p.date||l.date||"",desc:p.desc||"Rechnungsposten",client:kd}));
   });
   return out.sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+}
+/* Damit Übersicht, Honorar und der Zähler in der Leiste nie auseinanderlaufen */
+function honorarStand(){
+  const f=allFees();
+  const offen=f.filter(x=>!x.paid&&!x.abgeschrieben&&!x.probono);
+  return {liste:f,n:f.length,gesamt:summe(f),offen:summe(offen),offenN:offen.length,
+          pro:f.filter(x=>x.probono).length};
 }
 
 /* =============================================================================
@@ -1330,7 +1339,7 @@ const NAV=[
   {id:"clients",ic:"👤", lbl:"Mandanten", cnt:()=>DB.clients.length},
   {id:"cases",  ic:"📁", lbl:"Fälle",     cnt:()=>DB.cases.length},
   {id:"antrag", ic:"📄", lbl:"Schriftsätze", cnt:()=>DB.docs.length},
-  {id:"fees",   ic:"💰", lbl:"Honorar",   cnt:()=>allFees().filter(f=>!f.paid&&!f.abgeschrieben&&!f.probono).length, alert:1},
+  {id:"fees",   ic:"💰", lbl:"Honorar",   cnt:()=>honorarStand().offenN, alert:1},
   {id:"law",    ic:"📖", lbl:"Gesetze",   cnt:()=>CATALOG.length},
   {id:"data",   ic:"💾", lbl:"Daten"}
 ];
@@ -1375,9 +1384,12 @@ function serie(){
 const serieText=()=>{const st=serie();return st?' · <span class="'+st.cls+'-tx">'+st.n+(st.gut?" in Folge mit Erfolg":" in Folge ohne Erfolg")+'</span>':"";};
 
 function vDash(){
-  const alle=DB.cases, s=stats(alle), st=serie(), q=docStats(DB.docs);
+  const alle=DB.cases, s=stats(alle), st=serie(), q=docStats(DB.docs), h=honorarStand();
   const fehler=alle.filter(c=>errCount(c)&&endOutcome(c).k!=="freed");
   const kpi=(cls,lbl,val,sub)=>'<div class="kpi '+cls+'"><div class="lbl">'+lbl+'</div><div class="val">'+val+'</div><div class="sub">'+sub+'</div></div>';
+
+  /* die letzten Fälle als Streifen – zeigt die Form, nicht die Historie */
+  const form=[...alle].sort(byDateDesc).slice(0,14).reverse();
 
   /* Ergebnisverteilung als eine Zeile statt drei Listen */
   const teil=(n,cls,lbl)=>n?'<i class="'+cls+'" style="width:'+(n/s.closed*100)+'%" title="'+lbl+': '+n+'"></i>':"";
@@ -1387,15 +1399,19 @@ function vDash(){
       <span data-fo="freed" class="click"><b style="background:var(--ok)"></b>Rausgeholt ${s.freed} · ${pct(s.freed,s.closed)}%</span>
       <span data-fo="reduced" class="click"><b style="background:var(--warn)"></b>Gedrückt ${s.reduced} · ${pct(s.reduced,s.closed)}%</span>
       <span data-fo="none" class="click"><b style="background:var(--bad)"></b>Nichts ${s.none} · ${pct(s.none,s.closed)}%</span>
-    </div></div>`:"";
+    </div>
+    ${form.length>1?'<div class="formstrip">'+form.map(c=>{const e=endInfo(c),k=client(c.clientId);
+      return '<i class="'+e.cls+'" data-case="'+c.id+'" title="'+esc((c.caseNo||"")+" · "+(k?k.name:"?")+" · "+dateDE(c.date)+" · "+e.lbl)+'"></i>';}).join("")
+      +'</div><div class="hint" style="margin-top:6px">Die letzten '+form.length+' Fälle, älteste links – zum Öffnen anklicken.</div>':""}
+    </div>`:"";
 
   /* Rangliste: Balkenbreite = Fallzahl, Farben = Endstände */
-  const rank=(groups,fmt,label)=>{
+  const rank=(groups,fmt,label,extra)=>{
     if(!groups.length) return '<div class="muted" style="font-size:13px">noch keine Daten</div>';
     groups.sort((a,b)=>b.s.n-a.s.n);
     const max=Math.max(...groups.map(g=>g.s.n));
     return '<div class="bars">'+groups.slice(0,7).map(g=>{const t=g.s.n;
-      return `<div class="bar-row"><div class="nm" title="${esc(g.key)}">${esc(label?label(g):g.key)}</div>
+      return `<div class="bar-row"><div class="nm" title="${esc(g.key)}">${esc(label?label(g):g.key)}${extra?" "+extra(g):""}</div>
         <div class="track" style="width:${Math.max(12,t/max*100)}%">
           ${g.s.freed?'<i class="ok" style="width:'+g.s.freed/t*100+'%"></i>':""}
           ${g.s.reduced?'<i class="warn" style="width:'+g.s.reduced/t*100+'%"></i>':""}
@@ -1404,6 +1420,22 @@ function vDash(){
         </div><div class="vv">${fmt(g)}</div></div>`;}).join("")+'</div>';
   };
   const zeile=(t,v,cls)=>'<div class="line"><span>'+t+'</span><span class="mono '+(cls||"")+'" style="margin-left:auto">'+v+'</span></div>';
+
+  /* Erfolgsquote einer Teilmenge als Zeile */
+  const quote=(t,l)=>{const w=stats(l);
+    return zeile(t+' <span class="muted">('+w.n+")</span>",
+      w.closed?w.rate+"% · "+w.success+"/"+w.closed:"–",
+      w.closed?(w.rate>=s.rate?"ok-tx":"bad-tx"):"muted");};
+  const mitF=alle.filter(c=>errCount(c)), ohneF=alle.filter(c=>!errCount(c));
+
+  /* offene Beträge je Mandantschaft, größter zuerst */
+  const schuldMap=new Map();
+  h.liste.filter(f=>!f.paid&&!f.abgeschrieben&&!f.probono).forEach(f=>{
+    const key=f.clientId||("x:"+((f.client&&f.client.name)||"?"));
+    const e=schuldMap.get(key)||{id:f.clientId||"",name:(f.client&&f.client.name)||"unbekannt",sum:0,n:0};
+    e.sum+=+f.amount||0; e.n++; schuldMap.set(key,e);
+  });
+  const schulden=[...schuldMap.values()].sort((a,b)=>b.sum-a.sum).slice(0,6);
 
   return `
   <header class="top"><div><h2>Übersicht</h2><div class="sub">${alle.length} Fälle · ${DB.clients.length} Mandanten · ${DB.docs.length} Schriftstücke</div></div>
@@ -1423,7 +1455,7 @@ function vDash(){
     ${kpi("ok","Rausgeholt",s.freed,s.reduced+" mal Strafe gedrückt")}
     ${kpi("acc","Gespart",s.savedS+" ⭐",money(s.savedF)+" · Ø "+s.avgS+" ⭐ pro Fall")}
     ${kpi("","Laufend",s.laufend,s.pending?"davon "+(s.pending===1?"1 Revision":s.pending+" Revisionen")+" beim Gericht":"keine Revision offen")}
-    ${kpi(s.open$?"bad":"ok","Honorar offen",money(s.open$),money(s.fee)+" gesamt")}
+    ${kpi(h.offen?"bad":"ok","Honorar offen",money(h.offen),h.offenN+" von "+h.n+" Positionen · "+money(h.gesamt)+" gesamt")}
   </div>
 
   ${verteilung}
@@ -1451,32 +1483,41 @@ function vDash(){
         ${zeile("Schriftstücke",q.approved+" genehmigt · "+q.rejected+" abgelehnt")}
       </div></div>
 
+    <div class="card"><h3>Was funktioniert</h3>
+      <div class="calc" style="margin-top:2px">
+        ${quote("Schnellverfahren",alle.filter(c=>c.procedure==="polizei"))}
+        ${quote("Vor Gericht",alle.filter(c=>c.procedure==="gericht"))}
+        ${quote("Mit §35-Fehler in der Akte",mitF)}
+        ${quote("Ohne gefundenen Fehler",ohneF)}
+        ${quote("Mit eingelegter Revision",alle.filter(c=>c.rev?.stand!=="keine"))}
+      </div>
+      <div class="hint">Quote = rausgeholt oder Strafe gedrückt, gemessen an den entschiedenen Fällen.
+        ${mitF.length&&ohneF.length?"Ein gefundener Abhandlungsfehler bringt dir "+
+          (stats(mitF).rate-stats(ohneF).rate>0?"+":"")+(stats(mitF).rate-stats(ohneF).rate)+" Prozentpunkte.":""}</div></div>
+
     <div class="card"><h3>Staatsanwälte</h3>${rank(groupBy(alle,"sta"),g=>g.s.n+" · "+g.s.rate+"%")}
       <div class="hint">Prozent = deine Erfolgsquote gegen diesen StA.</div></div>
 
     <div class="card"><h3>Beamte</h3>${rank(groupBy(alle,"officers"),g=>g.s.n+" · "+g.s.freeRate+"% raus")}
       <div class="hint">Prozent = Anteil der Festnahmen, bei denen der Mandant komplett rauskam.</div></div>
 
+    <div class="card"><h3>Behörden</h3>${rank(groupBy(alle,"agency"),g=>g.s.n+" · "+g.s.rate+"%",null,g=>{
+        const f=g.list.filter(c=>errCount(c)).length;
+        return f?'<span class="pill bad" title="Fälle mit Abhandlungsfehler">'+f+' × §35</span>':"";})}
+      <div class="hint">Wie oft dir welche Behörde einen Abhandlungsfehler liefert.</div></div>
+
     <div class="card"><h3>Häufigste Vorwürfe</h3>${rank(groupBy(alle,"charges"),g=>g.s.n+" · "+g.s.rate+"%",g=>{const e=catFind(g.key);return e?e.b+" "+e.p:g.key;})}
       <div class="hint">Prozent = deine Erfolgsquote bei diesem Vorwurf.</div></div>
 
-    <div class="card"><h3>Verlauf letzte 12 Monate</h3>${monthChart(alle)}</div>
+    <div class="card"><h3>Wer noch zahlen muss</h3>
+      ${schulden.length?'<div class="calc" style="margin-top:2px">'+schulden.map(o=>
+        '<div class="line click" '+(o.id?'data-client="'+o.id+'"':"")+'><span>'+esc(o.name)+'</span>'+
+        '<span class="muted" style="margin-left:8px">'+o.n+' Position'+(o.n>1?"en":"")+'</span>'+
+        '<span class="mono bad-tx" style="margin-left:auto">'+money(o.sum)+'</span></div>').join("")+'</div>'
+        :'<div class="muted" style="font-size:13px">Nichts offen – alles bezahlt.</div>'}
+      <div class="hint">§51 II StGB: offene Honorare kannst du als Antragsdelikt anzeigen.</div></div>
   </div>`;
 }
-
-function monthChart(list){
-  const now=new Date(), months=[];
-  for(let i=11;i>=0;i--){const d=new Date(now.getFullYear(),now.getMonth()-i,1);
-    months.push({k:d.toISOString().slice(0,7),lbl:d.toLocaleDateString("de-DE",{month:"short"})});}
-  const data=months.map(m=>{const l=list.filter(c=>(c.date||"").slice(0,7)===m.k);return {...m,...stats(l),total:l.length};});
-  const max=Math.max(1,...data.map(d=>d.total));
-  const seg=(n,cls)=>n?'<div class="seg" style="height:'+(n/max*120)+'px;background:var(--'+cls+')"></div>':"";
-  return '<div class="chart">'+data.map(d=>'<div class="col" title="'+d.lbl+': '+d.total+' Fälle">'+
-      seg(d.none,"bad")+seg(d.reduced,"warn")+seg(d.freed,"ok")+seg(d.open,"neutral")+'</div>').join("")+'</div>'+
-    '<div class="chart-x">'+data.map(d=>'<span>'+d.lbl+'</span>').join("")+'</div>'+legend();
-}
-const legend=()=>'<div class="legend">'+["freed","reduced","none","open"].map(k=>{const o=OUTCOMES[k];
-  return '<span><b style="background:var(--'+o.cls+')"></b>'+o.short+'</span>';}).join("")+'</div>';
 
 /* =============================================================================
    9) Ansicht: Mandanten
@@ -1799,7 +1840,8 @@ unternehmen:{lbl:"Anmeldung eines Unternehmens",kurz:"UG",ico:"🏢",phase:"weit
     {k:"inhaber",l:"Weitere Gründer oder Gesellschafter",t:"area",
      hint:"eine Person je Zeile, mit Reisepassnummer – leer lassen bei Alleininhaber"},
     {k:"start",l:"Geplanter Beginn",t:"date"},
-    {k:"marke",l:"Zugleich Eintragung des Namens als Marke beantragt",t:"check",hint:"§12 BGB"},
+    {k:"marke",l:"Zugleich Eintragung des Namens als Marke beantragt",t:"check",
+     hint:"§12 BGB – für den vollen Schutzumfang die eigene Vorlage „Eintragung eines Namens oder Zeichens“ nehmen"},
     {k:"oath",l:"Eidesstattliche Versicherung abgegeben",t:"check",req:1,
      hint:"Abnahme durch den Anwalt zulässig (§61 StPO)"}],
   text:`namens und in Vollmacht meiner Mandantschaft {mandant}, Reisepass-Nummer {reisepass}, Telefon-Nummer {telefon}, melde ich gemäß § 11 Abs. 2 und 3 BGB die Gründung des Unternehmens {firma} an und bitte um Eintragung in das staatliche Unternehmensregister.
@@ -1841,6 +1883,69 @@ Der gewählte Name verletzt kein bestehendes Namensrecht Dritter im Sinne des §
 {eid:die vorstehenden Angaben zutreffend sind, das Unternehmen ausschließlich legalen Zwecken dient und die Gründer ihre Pflichten nach § 11 Abs. 4 BGB – insbesondere hinsichtlich Steuern, Arbeitsrecht und Unternehmensregistrierung – einhalten werden}
 
 Ich bitte um Bestätigung der Anmeldung sowie um Mitteilung, welche weiteren Unterlagen die Wirtschaftsverwaltung benötigt.`},
+
+marke:{lbl:"Eintragung eines Namens oder Zeichens",kurz:"MK",ico:"®️",phase:"weitere",
+  wann:"Bevor der Name öffentlich benutzt wird – oder sobald ihn jemand nachahmt. Eingetragen wird nach §12 BGB bei der Regierung.",
+  an:"An die Regierung des Staates San Andreas\n– Gouverneursbüro, Wirtschaftsverwaltung –",
+  fee:"antrag",ref:"§§ 12, 3 BGB",oath:1,
+  hinweis:"§12 I BGB: die Eintragung erfolgt verbindlich bei der Regierung. §12 II nennt ausdrücklich Marken, Patente, Urheberrechte, Designs, Geschmacksmuster und Handelsnamen. Wer den Namen unbefugt weiterbenutzt, ist nach §3 I BGB zur Beseitigung und Unterlassung verpflichtet – über die Unzulässigkeit entscheidet nach §3 II BGB ausschließlich ein Gericht.",
+  betreff:"Antrag auf Eintragung – {schutzart} {zeichen}",
+  fields:[
+    {k:"schutzart",l:"Art des Schutzrechts",t:"select",def:"Marke (Wortmarke)",
+      opts:["Marke (Wortmarke)","Handelsname","Logo oder Design","Geschmacksmuster","Urheberrecht","Patent"],
+      hint:"§12 Abs. 2 BGB zählt diese Schutzrechte auf"},
+    {k:"zeichen",l:"Name oder Zeichen",t:"text",req:1,hint:"genau in der Schreibweise, die geschützt werden soll"},
+    {k:"firma",l:"Für welches Unternehmen (optional)",t:"text",
+      hint:"leer lassen, wenn die Mandantschaft persönlich Inhaber ist"},
+    {k:"umfang",l:"Wofür der Schutz gelten soll",t:"area",req:1,
+      hint:"Waren, Dienstleistungen und Geschäftsbereiche – so eng wie nötig, so weit wie möglich"},
+    {k:"darstellung",l:"Darstellung (optional)",t:"area",
+      hint:"Schreibweise, Farben, Schriftzug, Logo – alles, woran das Zeichen erkennbar ist"},
+    {k:"seit",l:"Benutzt seit",t:"date",hint:"belegt die zeitliche Priorität gegenüber späteren Anmeldern"},
+    {k:"nachweis",l:"Nachweise der Benutzung (optional)",t:"area",
+      hint:"Beschriftung, Fahrzeuge, Verträge, Werbung, Zeugen – eine Zeile je Nachweis"},
+    {k:"verletzer",l:"Wird der Name bereits von Dritten benutzt? (optional)",t:"text",
+      hint:"Name der Person oder des Unternehmens – löst den Teil nach §3 BGB aus"},
+    {k:"unterlassung",l:"Beseitigung und Unterlassung nach §3 BGB verlangen",t:"check",
+      hint:"nur sinnvoll, wenn oben ein Dritter benannt ist"},
+    {k:"oath",l:"Eidesstattliche Versicherung abgegeben",t:"check",req:1,
+      hint:"Abnahme durch den Anwalt zulässig (§61 StPO)"}],
+  text:`namens und in Vollmacht meiner Mandantschaft {mandant}, Reisepass-Nummer {reisepass}, Telefon-Nummer {telefon}, beantrage ich gemäß § 12 Abs. 1 BGB die verbindliche Eintragung des nachstehenden Schutzrechts in das Register der Regierung.
+
+ANGABEN ZUM SCHUTZRECHT
+
+Art des Schutzrechts: {schutzart}
+Name beziehungsweise Zeichen: {zeichen}
+{firma?Inhaber: {firma}, vertreten durch meine Mandantschaft}
+{seit?Benutzt seit: {seit}}
+
+SCHUTZUMFANG
+
+{umfang}
+
+{darstellung?DARSTELLUNG}
+
+{darstellung?{darstellung}}
+
+{nachweis?NACHWEISE DER BENUTZUNG}
+
+{liste:nachweis}
+
+RECHTLICHE GRUNDLAGE
+
+Nach § 12 Abs. 1 BGB steht natürlichen und juristischen Personen des Privatrechts das Recht zu, ihre Markenrechte und sonstigen schützenswerten geistigen Eigentumsrechte bei der Regierung verbindlich eintragen zu lassen. § 12 Abs. 2 BGB erfasst dabei ausdrücklich Marken, Patente, Urheberrechte, Designs, Geschmacksmuster und Handelsnamen; die beantragte Eintragung als {schutzart} fällt hierunter.
+
+Das Zeichen verletzt kein bestehendes Namensrecht Dritter im Sinne des § 3 BGB. Meiner Mandantschaft ist kein früherer Berechtigter desselben Namens bekannt.
+
+{verletzer?BEEINTRÄCHTIGUNG DURCH DRITTE}
+
+{verletzer?Der Name wird gegenwärtig von {verletzer} gebraucht, ohne dazu berechtigt zu sein. Nach § 3 Abs. 1 BGB kann der Berechtigte von demjenigen, der unbefugt denselben Namen gebraucht, die Beseitigung der Beeinträchtigung verlangen; sind weitere Beeinträchtigungen zu besorgen, kann er auf Unterlassung klagen.}
+
+{unterlassung?Ich fordere {verletzer} daher auf, den Gebrauch des Namens {zeichen} unverzüglich einzustellen und die eingetretene Beeinträchtigung zu beseitigen. Für den Fall der Fortsetzung behalte ich mir vor, die Unterlassung nach § 3 Abs. 2 BGB gerichtlich geltend zu machen; über die Unzulässigkeit entscheidet ausschließlich ein Gericht.}
+
+{eid:das vorstehend bezeichnete Zeichen von meiner Mandantschaft geführt wird, die Angaben zu Schutzumfang und Benutzung zutreffend sind und meiner Mandantschaft kein älteres Recht eines Dritten an diesem Namen bekannt ist}
+
+Ich bitte um Eintragung des Schutzrechts, um schriftliche Bestätigung mit Angabe des Eintragungsdatums sowie um Mitteilung, welche weiteren Unterlagen die Wirtschaftsverwaltung benötigt.`},
 
 familie:{lbl:"Antrag auf eine Familienlizenz",kurz:"FL",ico:"👪",phase:"weitere",wann:"Familiengründung. Eidesstattliche Versicherung nimmst du selbst ab.",
   an:"An die Justiz des Staates San Andreas",fee:"familie",ref:"§7 RAVO",oath:1,
@@ -1910,7 +2015,7 @@ Sämtliche Positionen halten die Höchstsätze der RAVO ein und sind nach § 3 A
 {privat?Ich bitte um Ausgleich der Rechnung und danke für Ihr Vertrauen.}{pflicht?Für Rückfragen zu einzelnen Positionen stehe ich zur Verfügung. Die Akte kann auf Anforderung nach § 3 Abs. 6 RAVO eingesehen werden.}`}
 };
 const TPL_STD=JSON.parse(JSON.stringify(TPL));
-const TPL_KEYS_STD=["vollmacht","akte","revision","gnade","loeschung","entschaedigung","dienstaufsicht","anzeige","einstweilig","familie","unternehmen","rechnung"];
+const TPL_KEYS_STD=["vollmacht","akte","revision","gnade","loeschung","entschaedigung","dienstaufsicht","anzeige","einstweilig","familie","unternehmen","marke","rechnung"];
 /* Wofür man welchen Schriftsatz nimmt – gruppiert nach dem Zeitpunkt im Mandat */
 const PHASEN=[
   {k:"start",  lbl:"1 · Mandat annehmen und Akte sichern"},
