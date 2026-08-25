@@ -49,11 +49,16 @@ Die Gebühren der Schriftstücke zählen automatisch zum jeweiligen Verfahren �
 eingetragen. Der Nachweis der letzten 14 Tage nach § 3 VI RAVO wird als fertiges PDF im Briefkopf der Kanzlei
 ausgegeben, wahlweise als Tabelle.
 
-**Fristen und Auswertung**
-Die 72-Stunden-Frist der Revision (§ 41 I StPO) und die Verjährung nach 14 Tagen (§ 19 StPO) laufen
-sichtbar mit. Die Übersicht fasst Ergebnisse und Statistik auf einer Seite zusammen: Erfolgsquote,
-gesparte Hafteinheiten und Geldstrafen, die Fälle je Ausgang sowie Ranglisten der Staatsanwälte und
-der festnehmenden Beamten.
+**Ergebnis und Revision**
+Jeder Fall hat zwei Achsen: das Ergebnis der Abhandlung und — falls es eine gab — den Ausgang der
+Revision. Daraus ergibt sich der Endstand: eine stattgegebene Revision schlägt das Ergebnis der
+Abhandlung, eine laufende hält den Fall offen, eine verworfene ändert nichts. Wird ein Revisionsantrag
+auf genehmigt oder abgelehnt gesetzt, übernimmt der Fall den Stand von selbst.
+
+**Auswertung**
+Die Übersicht rechnet mit dem Endstand: Erfolgsquote, Serie (wie viele Fälle in Folge mit oder ohne
+Erfolg), gesparte Hafteinheiten und Geldstrafen, Revisionsquote, Ranglisten der Staatsanwälte, der
+festnehmenden Beamten und der häufigsten Vorwürfe sowie der Verlauf der letzten zwölf Monate.
 
 **Gesetzestexte**
 229 Paragraphen aus neun Gesetzbüchern im Wortlaut — StGB, StPO, BGB, WaffG, BtMG, StVO, BDG, SVerfG,

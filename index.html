@@ -88,7 +88,7 @@ header.top .sub{color:var(--tx3);font-size:13px}
 .grid{display:grid;gap:14px}
 .muted{color:var(--tx3)}
 .mono{font-variant-numeric:tabular-nums}
-.ok-tx{color:var(--ok)} .bad-tx{color:var(--bad)} .warn-tx{color:var(--warn)}
+.ok-tx{color:var(--ok)} .bad-tx{color:var(--bad)} .warn-tx{color:var(--warn)} .acc-tx{color:var(--acc)}
 
 input[type=text],input[type=number],input[type=date],input[type=time],input[type=search],select,textarea{
   width:100%;background:var(--bg);border:1px solid var(--line2);border-radius:var(--r-sm);padding:8px 11px;outline:0;
@@ -147,6 +147,7 @@ button.pill:hover{filter:brightness(1.25)}
 .bar-row .vv{font-size:12px;color:var(--tx3);white-space:nowrap;min-width:52px;text-align:right}
 .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--tx2);margin-top:14px}
 .legend b{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px}
+.legend span.click{cursor:pointer}.legend span.click:hover{color:var(--tx)}
 .chart{display:flex;align-items:flex-end;gap:6px;height:150px;padding-top:10px}
 .chart .col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;min-width:14px}
 .chart .col .seg{border-radius:2px}
@@ -197,8 +198,11 @@ html.modal-offen,html.modal-offen body{overflow:hidden}
 .seg-ctl button[data-v=freed].on{background:var(--ok);border-color:var(--ok)}
 .seg-ctl button[data-v=reduced].on{background:var(--warn);border-color:var(--warn);color:#20160a}
 .seg-ctl button[data-v=none].on{background:var(--bad);border-color:var(--bad)}
-.seg-ctl button[data-v=pending].on{background:var(--warn);border-color:var(--warn);color:#20160a}
-.seg-ctl button[data-v=open].on{background:var(--neutral);border-color:var(--neutral)}
+.seg-ctl button[data-v=open].on,.seg-ctl button[data-v=keine].on{background:var(--neutral);border-color:var(--neutral)}
+.seg-ctl button[data-v=won].on{background:var(--ok);border-color:var(--ok)}
+.seg-ctl button[data-v=part].on{background:var(--warn);border-color:var(--warn);color:#20160a}
+.seg-ctl button[data-v=lost].on{background:var(--bad);border-color:var(--bad)}
+.seg-ctl button[data-v=filed].on{background:var(--acc);border-color:var(--acc)}
 .seg-ctl.plain button.on{background:var(--acc);border-color:var(--acc)}
 
 .detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:14px;margin-bottom:16px}
@@ -529,7 +533,6 @@ const WANTED_WERT=20000;          /* StPO §3 VI und VIII: 1 Hafteinheit = 20.00
 const KAUTION_FAKTOR=2;           /* StPO §22 II: 200 % der Wanteds */
 const KAUTION_MAX_HE=3;           /* StPO §22 III: ab 4 Hafteinheiten keine Kaution */
 const VERJAEHRUNG_TAGE=14;        /* StPO §19 I */
-const REVISION_FRIST_H=72;        /* StPO §41 I */
 const ENTSCHAEDIGUNG_JE_HE=25000; /* StPO §23 V */
 const DOKU_TAGE=14;               /* RAVO §3 VI */
 const ABHANDLUNG_MIN=25;          /* StPO §12 I */
@@ -776,33 +779,49 @@ const LAW=[
    4) Datenhaltung — localStorage, Speichern nach jeder Änderung
    ============================================================================= */
 const KEY="kanzlei_akte_v1", BAK="kanzlei_akte_v1_backup";
+/* Ein Fall hat zwei Achsen: das Ergebnis der Abhandlung und – falls es eine gab –
+   den Ausgang der Revision. Der Endstand ergibt sich aus beidem (endOutcome). */
 const OUTCOMES={
+  open:   {lbl:"Läuft noch",      short:"Läuft",      cls:"neutral"},
   freed:  {lbl:"Rausgeholt",      short:"Rausgeholt", cls:"ok"},
   reduced:{lbl:"Strafe gedrückt", short:"Gedrückt",   cls:"warn"},
-  none:   {lbl:"Nichts erreicht", short:"Nichts",     cls:"bad"},
-  pending:{lbl:"Eingereicht",     short:"Eingereicht",cls:"warn"},
-  open:   {lbl:"Laufend",         short:"Laufend",    cls:"neutral"}
+  none:   {lbl:"Nichts erreicht", short:"Nichts",     cls:"bad"}
 };
 const PROCEDURES={
   polizei: "Polizeiliche Abhandlung / Schnellverfahren",
-  gericht: "Ordentliches Gericht",
-  revision:"Revisionsverfahren"
+  gericht: "Ordentliches Gericht"
 };
-/* Dieselben vier Ausgänge heißen je nach Verfahren anders – gerechnet wird gleich */
+/* Dieselben Ausgänge heißen vor Gericht anders – gerechnet wird gleich */
 const OUTCOME_TEXTE={
-  gericht: {freed:{lbl:"Freispruch",short:"Freispruch"},
+  gericht: {open:{lbl:"Termin offen",short:"Termin"},
+            freed:{lbl:"Freispruch",short:"Freispruch"},
             reduced:{lbl:"Strafe gemildert",short:"Gemildert"},
-            none:{lbl:"Verurteilt",short:"Verurteilt"},
-            pending:{lbl:"Termin anberaumt",short:"Termin"}},
-  revision:{freed:{lbl:"Revision stattgegeben",short:"Stattgegeben"},
-            reduced:{lbl:"Teilweise stattgegeben",short:"Teilweise"},
-            none:{lbl:"Revision verworfen",short:"Verworfen"},
-            pending:{lbl:"Revision eingereicht",short:"Eingereicht"}}
+            none:{lbl:"Verurteilt",short:"Verurteilt"}}
+};
+const REV={
+  keine:{lbl:"keine",        short:"",               cls:"neutral"},
+  filed:{lbl:"eingereicht",  short:"Revision läuft", cls:"acc"},
+  won:  {lbl:"stattgegeben", short:"Revision durch", cls:"ok"},
+  part: {lbl:"teilweise",    short:"Revision teils", cls:"warn"},
+  lost: {lbl:"verworfen",    short:"Revision weg",   cls:"bad"}
 };
 function outcomeInfo(key,procedure){
   const b=OUTCOMES[key]||OUTCOMES.open;
   const o=(OUTCOME_TEXTE[procedure]||{})[key];
   return o?{...b,...o}:b;
+}
+/* Endstand: eine gewonnene Revision schlägt das Ergebnis der Abhandlung,
+   eine laufende hält den Fall offen, eine verworfene ändert nichts. */
+function endOutcome(c){
+  const st=c.rev?.stand||"keine";
+  if(st==="won")   return {k:"freed",  rev:st};
+  if(st==="part")  return {k:"reduced",rev:st};
+  if(st==="filed") return {k:"open",   rev:st};
+  return {k:OUTCOMES[c.outcome]?c.outcome:"open",rev:st};
+}
+function endInfo(c){
+  const e=endOutcome(c);
+  return {...outcomeInfo(e.k,c.procedure),k:e.k,rev:e.rev,viaRev:e.rev==="won"||e.rev==="part"};
 }
 /* Prüfpunkte des §35 StPO — jeder angehakte Punkt begründet Freispruch */
 const FEHLER=[
@@ -877,7 +896,25 @@ function migrate(d){
     c.procedure=c.procedure||"polizei";
     if(c.procedure==="schnell") c.procedure="polizei";   /* fruehere eigene Verfahrensart */
     c.errors=c.errors||{};
-    c.revision=c.revision||{filed:false,ref:"",result:""};
+    /* Revision war frueher eine Verfahrensart plus Freitext - jetzt eine eigene Achse */
+    c.rev=c.rev||{stand:"keine",ref:""};
+    if(c.procedure==="revision"){
+      c.rev.stand=c.outcome==="freed"?"won":c.outcome==="reduced"?"part":c.outcome==="none"?"lost":"filed";
+      c.outcome="none"; c.procedure="gericht";
+    }
+    if(c.revision){
+      if(c.revision.ref&&!c.rev.ref) c.rev.ref=c.revision.ref;
+      if(c.rev.stand==="keine"&&c.revision.filed){
+        const t=(c.revision.result||"").toLowerCase();
+        c.rev.stand=/verworf|abgelehnt|zur(ü|ue)ckgew|erfolglos/.test(t)?"lost"
+                   :/teil/.test(t)?"part"
+                   :/statt|erfolg|gewonnen|frei/.test(t)?"won":"filed";
+      }
+      delete c.revision;
+    }
+    if(c.outcome==="pending") c.outcome=c.rev.stand!=="keine"?"none":"open";
+    if(!["open","freed","reduced","none"].includes(c.outcome)) c.outcome="open";
+    if(!REV[c.rev.stand]) c.rev.stand="keine";
     /* altes Einzelfeld "fee" in eine RAVO-Position überführen */
     if(!Array.isArray(c.fees)){
       c.fees = c.fee ? [{id:uid(),type:"beratung",qty:1,amount:Number(c.fee)||0,paid:true,
@@ -1061,8 +1098,8 @@ function initials(){
 }
 function makeRef(kind,clientId){
   const y=new Date().getFullYear();
-  const docs=DB.cases.filter(c=>c.clientId===clientId&&c.revision&&c.revision.ref).length+1;
-  const total=DB.cases.filter(c=>c.revision&&c.revision.ref).length+1;
+  const docs=DB.cases.filter(c=>c.clientId===clientId&&c.rev&&c.rev.ref).length+1;
+  const total=DB.cases.filter(c=>c.rev&&c.rev.ref).length+1;
   const laufend=String.fromCharCode(65+Math.floor(total/99));
   return [laufend,kind,initials(),y,String(docs).padStart(2,"0")].join("-");
 }
@@ -1193,26 +1230,6 @@ function allErrors(c){
 }
 const errCount=c=>Object.keys(allErrors(c)).length;
 
-/* --- Fristen --- */
-/* §41 I StPO: 72 h ab dem Folgetag des Urteils */
-function revisionDeadline(c){
-  const base=c.verdictAt||c.date;
-  if(!base) return null;
-  const d=new Date(base+"T00:00:00");
-  if(isNaN(d)) return null;
-  d.setDate(d.getDate()+1);
-  return new Date(d.getTime()+REVISION_FRIST_H*3600000);
-}
-function revisionStatus(c){
-  if(c.revision&&c.revision.filed) return {s:"filed",lbl:"Revision eingereicht",cls:"ok"};
-  const dl=revisionDeadline(c);
-  if(!dl) return {s:"none",lbl:"",cls:""};
-  const left=dl-Date.now();
-  if(left<=0) return {s:"over",lbl:"Revisionsfrist abgelaufen",cls:"neutral"};
-  const h=Math.floor(left/3600000);
-  return {s:"open",lbl:"Revision noch "+(h>=24?Math.floor(h/24)+" Tage "+(h%24)+" Std.":h+" Std.")+" möglich",
-          cls:h<24?"bad":"warn",hours:h};
-}
 /* §19 I StPO: Verjährung nach 14 Tagen */
 function verjaehrung(c){
   if(!c.date) return null;
@@ -1227,24 +1244,40 @@ function verjaehrung(c){
    6) Statistik-Kern
    ============================================================================= */
 function stats(list){
-  const s={n:list.length,freed:0,reduced:0,none:0,pending:0,open:0,savedS:0,savedF:0,fee:0,open$:0,
-           demandS:0,finalS:0,demandF:0,finalF:0,errors:0,revisions:0};
+  const s={n:list.length,freed:0,reduced:0,none:0,open:0,savedS:0,savedF:0,fee:0,open$:0,
+           demandS:0,finalS:0,demandF:0,finalF:0,errors:0,
+           rev:{filed:0,won:0,part:0,lost:0,n:0}};
   list.forEach(c=>{
-    s[OUTCOMES[c.outcome]?c.outcome:"open"]++;
+    const e=endOutcome(c);
+    s[e.k]++;
+    if(e.rev!=="keine"){ s.rev[e.rev]++; s.rev.n++; }
     s.savedS+=Math.max(0,(c.demand?.stars||0)-(c.final?.stars||0));
     s.savedF+=Math.max(0,(c.demand?.fine ||0)-(c.final?.fine ||0));
     s.fee+=feeTotal(c); s.open$+=feeOpen(c);
     s.demandS+=c.demand?.stars||0; s.finalS+=c.final?.stars||0;
     s.demandF+=c.demand?.fine ||0; s.finalF+=c.final?.fine ||0;
     if(errCount(c)) s.errors++;
-    if(c.revision&&c.revision.filed) s.revisions++;
   });
-  s.closed=s.freed+s.reduced+s.none;
-  s.laufend=s.open+s.pending;          /* alles, was noch nicht entschieden ist */
+  s.closed=s.freed+s.reduced+s.none;   /* entschieden */
+  s.laufend=s.open;                    /* offen, laufende Revisionen eingeschlossen */
+  s.pending=s.rev.filed;
   s.success=s.freed+s.reduced;
   s.rate=pct(s.success,s.closed);
   s.freeRate=pct(s.freed,s.closed);
+  s.revEnt=s.rev.won+s.rev.part+s.rev.lost;
+  s.revRate=pct(s.rev.won+s.rev.part,s.revEnt);
+  s.avgS=s.closed?Math.round(s.savedS/s.closed*10)/10:0;
+  s.avgF=s.closed?Math.round(s.savedF/s.closed):0;
   return s;
+}
+/* Serie: wie viele entschiedene Fälle in Folge (neueste zuerst) liefen gleich aus */
+function streak(list){
+  const gut=c=>{const k=endOutcome(c).k;return k==="freed"||k==="reduced";};
+  const l=list.filter(c=>endOutcome(c).k!=="open").sort(byDateDesc);
+  if(!l.length) return null;
+  const art=gut(l[0]); let n=0;
+  for(const c of l){ if(gut(c)!==art) break; n++; }
+  return {n,gut:art};
 }
 const saved=c=>({stars:Math.max(0,(c.demand?.stars||0)-(c.final?.stars||0)),
                  fine :Math.max(0,(c.demand?.fine ||0)-(c.final?.fine ||0))});
@@ -1272,6 +1305,20 @@ function allFees(){
               amount:l.fee,paid:!!l.paid,abgeschrieben:!!l.abgeschrieben,probono:!!l.probono,date:l.date||"",lawyerId:l.lawyerId,
               desc:(TPL[l.type]||{}).lbl||l.type,
               client:client(l.clientId)||{name:l.extName||"",phone:l.extPhone||"",pass:l.extPass||""}}); });
+  /* Rechnungen, deren Positionen nirgends sonst stehen (frei getippt, ohne Fall),
+     wuerden sonst im Honorar fehlen - sie kommen mit ihren eigenen Positionen dazu. */
+  DB.docs.forEach(l=>{
+    if(l.type!=="rechnung") return;
+    if(rechnungPosten(l).length) return;          /* steht bereits als Fall- oder Antragsgebuehr drin */
+    const w=rechnungStand(l); if(!w.soll) return;
+    const kd=client(l.clientId)||{name:l.extName||"",phone:l.extPhone||"",pass:l.extPass||""};
+    const bez=w.hat>=w.soll, abg=l.status==="rejected"||!!l.abgeschrieben;
+    const pos=(l.posten||[]).filter(p=>(+p.amount||0)>0);
+    (pos.length?pos:[{type:"antrag",qty:1,amount:w.soll,date:l.date,desc:"Rechnungsbetrag"}]).forEach((p,i)=>
+      out.push({id:l.id+"-"+i,src:"doc",srcId:l.id,ref:l.no||"",type:p.type||"antrag",qty:p.qty||1,
+                amount:+p.amount||0,paid:bez,abgeschrieben:abg,probono:!!p.probono,
+                date:p.date||l.date||"",desc:p.desc||"Rechnungsposten",client:kd}));
+  });
   return out.sort((a,b)=>(b.date||"").localeCompare(a.date||""));
 }
 
@@ -1283,7 +1330,7 @@ const NAV=[
   {id:"clients",ic:"👤", lbl:"Mandanten", cnt:()=>DB.clients.length},
   {id:"cases",  ic:"📁", lbl:"Fälle",     cnt:()=>DB.cases.length},
   {id:"antrag", ic:"📄", lbl:"Schriftsätze", cnt:()=>DB.docs.length},
-  {id:"fees",   ic:"💰", lbl:"Honorar",   cnt:()=>DB.cases.filter(c=>feeOpen(c)>0).length+DB.docs.filter(l=>l.fee&&!l.paid&&l.type!=="rechnung").length, alert:1},
+  {id:"fees",   ic:"💰", lbl:"Honorar",   cnt:()=>allFees().filter(f=>!f.paid&&!f.abgeschrieben&&!f.probono).length, alert:1},
   {id:"law",    ic:"📖", lbl:"Gesetze",   cnt:()=>CATALOG.length},
   {id:"data",   ic:"💾", lbl:"Daten"}
 ];
@@ -1320,45 +1367,43 @@ const go=v=>{view=v;render();};
 /* =============================================================================
    8) Ansicht: Übersicht
    ============================================================================= */
+function serie(){
+  const st=streak(DB.cases);
+  if(!st) return null;
+  return {...st, lbl:st.n+(st.gut?" mit Erfolg":" ohne Erfolg"), cls:st.gut?"ok":"bad"};
+}
+const serieText=()=>{const st=serie();return st?' · <span class="'+st.cls+'-tx">'+st.n+(st.gut?" in Folge mit Erfolg":" in Folge ohne Erfolg")+'</span>':"";};
+
 function vDash(){
-  const alle=DB.cases, s=stats(alle);
-  const fehler=alle.filter(c=>errCount(c)&&c.outcome!=="freed");
+  const alle=DB.cases, s=stats(alle), st=serie(), q=docStats(DB.docs);
+  const fehler=alle.filter(c=>errCount(c)&&endOutcome(c).k!=="freed");
   const kpi=(cls,lbl,val,sub)=>'<div class="kpi '+cls+'"><div class="lbl">'+lbl+'</div><div class="val">'+val+'</div><div class="sub">'+sub+'</div></div>';
 
-  /* Ergebnisspalte: die Fälle eines Ausgangs, beschriftet nach Verfahrensart */
-  const col=key=>{
-    const l=alle.filter(c=>c.outcome===key).sort(byDateDesc), o=OUTCOMES[key];
-    const arten=[...new Set(l.map(c=>c.procedure))].filter(a=>OUTCOME_TEXTE[a]);
-    return `<div class="card" style="padding:0;overflow:hidden">
-      <div style="padding:12px 15px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <span class="pill ${o.cls}">${o.lbl}</span>
-        ${arten.map(a=>'<span class="pill tag" title="'+esc(PROCEDURES[a]||"")+'">'+esc(outcomeInfo(key,a).short)+'</span>').join("")}
-        <span class="muted mono" style="margin-left:auto">${l.length} · ${pct(l.length,s.closed||1)}%</span></div>
-      <div style="max-height:340px;overflow:auto">${l.length?l.map(c=>{
-        const cl=client(c.clientId), sv=saved(c);
-        return `<div class="click" data-case="${c.id}" style="padding:9px 15px;border-bottom:1px solid var(--line)">
-          <div style="display:flex;gap:8px;align-items:baseline"><b>${cl?esc(cl.name):"?"}</b>
-            <span class="muted mono" style="font-size:12px">${esc(c.caseNo||"")}</span>
-            <span class="muted mono" style="margin-left:auto;font-size:12px">${dateDE(c.date)}</span></div>
-          ${key!=="none"&&(sv.stars||sv.fine)?'<div class="ok-tx" style="font-size:12px;margin-top:3px">gespart: '+sv.stars+' ⭐'+(sv.fine?" / "+money(sv.fine):"")+'</div>':""}
-        </div>`;}).join(""):'<div class="empty" style="padding:24px">nichts vorhanden</div>'}</div></div>`;
-  };
+  /* Ergebnisverteilung als eine Zeile statt drei Listen */
+  const teil=(n,cls,lbl)=>n?'<i class="'+cls+'" style="width:'+(n/s.closed*100)+'%" title="'+lbl+': '+n+'"></i>':"";
+  const verteilung=s.closed?`<div class="card" style="padding:14px 16px">
+    <div class="track" style="height:14px">${teil(s.freed,"ok","Rausgeholt")}${teil(s.reduced,"warn","Strafe gedrückt")}${teil(s.none,"bad","Nichts erreicht")}</div>
+    <div class="legend" style="margin-top:9px">
+      <span data-fo="freed" class="click"><b style="background:var(--ok)"></b>Rausgeholt ${s.freed} · ${pct(s.freed,s.closed)}%</span>
+      <span data-fo="reduced" class="click"><b style="background:var(--warn)"></b>Gedrückt ${s.reduced} · ${pct(s.reduced,s.closed)}%</span>
+      <span data-fo="none" class="click"><b style="background:var(--bad)"></b>Nichts ${s.none} · ${pct(s.none,s.closed)}%</span>
+    </div></div>`:"";
 
-  /* Rangliste: Balkenbreite = Fallzahl, Farben = Ausgänge */
-  const rank=(groups,fmt)=>{
+  /* Rangliste: Balkenbreite = Fallzahl, Farben = Endstände */
+  const rank=(groups,fmt,label)=>{
     if(!groups.length) return '<div class="muted" style="font-size:13px">noch keine Daten</div>';
     groups.sort((a,b)=>b.s.n-a.s.n);
     const max=Math.max(...groups.map(g=>g.s.n));
-    return '<div class="bars">'+groups.slice(0,8).map(g=>{const t=g.s.n;
-      return `<div class="bar-row"><div class="nm" title="${esc(g.key)}">${esc(g.label||g.key)}</div>
+    return '<div class="bars">'+groups.slice(0,7).map(g=>{const t=g.s.n;
+      return `<div class="bar-row"><div class="nm" title="${esc(g.key)}">${esc(label?label(g):g.key)}</div>
         <div class="track" style="width:${Math.max(12,t/max*100)}%">
           ${g.s.freed?'<i class="ok" style="width:'+g.s.freed/t*100+'%"></i>':""}
           ${g.s.reduced?'<i class="warn" style="width:'+g.s.reduced/t*100+'%"></i>':""}
           ${g.s.none?'<i class="bad" style="width:'+g.s.none/t*100+'%"></i>':""}
-          ${(g.s.open+g.s.pending)?'<i class="neutral" style="width:'+(g.s.open+g.s.pending)/t*100+'%"></i>':""}
+          ${g.s.open?'<i class="neutral" style="width:'+g.s.open/t*100+'%"></i>':""}
         </div><div class="vv">${fmt(g)}</div></div>`;}).join("")+'</div>';
   };
-  const q=docStats(DB.docs);
+  const zeile=(t,v,cls)=>'<div class="line"><span>'+t+'</span><span class="mono '+(cls||"")+'" style="margin-left:auto">'+v+'</span></div>';
 
   return `
   <header class="top"><div><h2>Übersicht</h2><div class="sub">${alle.length} Fälle · ${DB.clients.length} Mandanten · ${DB.docs.length} Schriftstücke</div></div>
@@ -1367,47 +1412,56 @@ function vDash(){
     <button class="btn primary" data-act="newCase">＋ Neuer Fall</button></header>
 
   ${fehler.length?`<div class="box bad" style="margin:0 0 16px;font-size:13px">
-    <b>⚠ ${fehler.length} Fall${fehler.length>1?"älle":""} mit zu hohem Strafmaß</b> – Freispruch nach §35 StPO beantragen:
+    <b>⚠ ${fehler.length} Fall${fehler.length>1?"älle":""} mit Abhandlungsfehler ohne Freispruch</b> – §35 StPO:
     ${fehler.slice(0,4).map(c=>{const cl=client(c.clientId);
-      return '<div style="margin-top:5px"><a href="#" data-case="'+c.id+'">'+esc(c.caseNo)+' · '+esc(cl?cl.name:"?")+'</a></div>';}).join("")}
+      return '<a href="#" data-case="'+c.id+'" style="margin-left:8px">'+esc(c.caseNo)+' · '+esc(cl?cl.name:"?")+'</a>';}).join("")}
     </div>`:""}
 
   <div class="kpis">
-    ${kpi("ok","Erfolgsquote",s.rate+"%",s.success+" von "+s.closed+" abgeschlossen")}
-    ${kpi("ok","Rausgeholt",s.freed,"Freispruch / Einstellung")}
-    ${kpi("warn","Strafe gedrückt",s.reduced,"Reduktion erreicht")}
-    ${kpi("bad","Nichts erreicht",s.none,"volle Strafe")}
-    ${kpi("",s.pending?"Offen":"Laufend",s.laufend,s.pending?s.pending+" davon eingereicht":"offene Mandate")}
-    ${kpi("acc","Honorar",money(s.fee),s.open$?money(s.open$)+" offen":"alles bezahlt")}
+    ${kpi("ok","Erfolgsquote",s.rate+"%",s.success+" von "+s.closed+" entschieden")}
+    ${kpi(st?st.cls:"","Serie",st?st.n:"–",st?(st.n===1?"Fall":"Fälle")+" in Folge "+(st.gut?"mit":"ohne")+" Erfolg":"noch nichts entschieden")}
+    ${kpi("ok","Rausgeholt",s.freed,s.reduced+" mal Strafe gedrückt")}
+    ${kpi("acc","Gespart",s.savedS+" ⭐",money(s.savedF)+" · Ø "+s.avgS+" ⭐ pro Fall")}
+    ${kpi("","Laufend",s.laufend,s.pending?"davon "+(s.pending===1?"1 Revision":s.pending+" Revisionen")+" beim Gericht":"keine Revision offen")}
+    ${kpi(s.open$?"bad":"ok","Honorar offen",money(s.open$),money(s.fee)+" gesamt")}
   </div>
 
-  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">${col("freed")}${col("reduced")}${col("none")}</div>
+  ${verteilung}
 
-  ${s.laufend?'<div class="sec-title">Noch nicht entschieden</div>'+caseTable(alle.filter(c=>c.outcome==="open"||c.outcome==="pending").sort(byDateDesc),{compact:true}):""}
+  ${s.laufend?'<div class="sec-title">Noch nicht entschieden</div>'+caseTable(alle.filter(c=>endOutcome(c).k==="open").sort(byDateDesc),{compact:true}):""}
 
   <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr));margin-top:18px">
     <div class="card"><h3>Für Mandanten herausgeholt</h3>
+      <div class="calc" style="margin-top:2px">
+        ${zeile("Gefordert",s.demandS+" ⭐ · "+money(s.demandF))}
+        ${zeile("Verhängt",s.finalS+" ⭐ · "+money(s.finalF))}
+        ${zeile("Ø je entschiedenem Fall",s.avgS+" ⭐ · "+money(s.avgF),"ok-tx")}
+      </div></div>
+
+    <div class="card"><h3>Revisionen &amp; Anträge</h3>
       <div class="detail-grid" style="margin:0">
-        <div><div class="dt">Hafteinheiten gespart</div><div class="dd mono ok-tx" style="font-size:22px">${s.savedS} ⭐</div></div>
-        <div><div class="dt">Geldstrafe gespart</div><div class="dd mono ok-tx" style="font-size:22px">${money(s.savedF)}</div></div>
+        <div><div class="dt">Revisionsquote</div><div class="dd mono ${s.revRate>=50?"ok-tx":"warn-tx"}" style="font-size:22px">${s.revEnt?s.revRate+"%":"–"}</div></div>
+        <div><div class="dt">Anträge genehmigt</div><div class="dd mono ok-tx" style="font-size:22px">${q.erledigt?q.rate+"%":"–"}</div></div>
       </div>
-      <div class="hint" style="margin-top:10px">Gefordert ${s.demandS} ⭐ / ${money(s.demandF)} → verhängt ${s.finalS} ⭐ / ${money(s.finalF)}</div>
-    </div>
+      <div class="calc" style="margin-top:10px">
+        ${zeile("Stattgegeben",s.rev.won,"ok-tx")}
+        ${zeile("Teilweise",s.rev.part,"warn-tx")}
+        ${zeile("Verworfen",s.rev.lost,"bad-tx")}
+        ${s.rev.filed?zeile("Noch offen",s.rev.filed,"acc-tx"):""}
+        ${zeile("Schriftstücke",q.approved+" genehmigt · "+q.rejected+" abgelehnt")}
+      </div></div>
+
     <div class="card"><h3>Staatsanwälte</h3>${rank(groupBy(alle,"sta"),g=>g.s.n+" · "+g.s.rate+"%")}
       <div class="hint">Prozent = deine Erfolgsquote gegen diesen StA.</div></div>
+
     <div class="card"><h3>Beamte</h3>${rank(groupBy(alle,"officers"),g=>g.s.n+" · "+g.s.freeRate+"% raus")}
       <div class="hint">Prozent = Anteil der Festnahmen, bei denen der Mandant komplett rauskam.</div></div>
-    ${DB.docs.length?`<div class="card"><h3>Schriftstücke</h3>
-      <div class="detail-grid" style="margin:0">
-        <div><div class="dt">Genehmigt</div><div class="dd mono ok-tx" style="font-size:22px">${q.approved}${q.erledigt?' <span class="muted" style="font-size:13px">'+q.rate+"%</span>":""}</div></div>
-        <div><div class="dt">Abgelehnt</div><div class="dd mono ${q.rejected?"bad-tx":""}" style="font-size:22px">${q.rejected}</div></div>
-      </div>
-      <div class="hint" style="margin-top:10px">${q.submitted?q.submitted+" eingereicht · ":""}${q.entwurf?q.entwurf+" Entwurf":"kein Entwurf offen"}</div></div>`:""}
-    <div class="card"><h3>Verlauf letzte 12 Monate</h3>${monthChart(alle)}</div>
-  </div>
 
-  <div class="sec-title">Zuletzt bearbeitet</div>
-  ${caseTable([...alle].sort(byDateDesc).slice(0,6),{compact:true})}`;
+    <div class="card"><h3>Häufigste Vorwürfe</h3>${rank(groupBy(alle,"charges"),g=>g.s.n+" · "+g.s.rate+"%",g=>{const e=catFind(g.key);return e?e.b+" "+e.p:g.key;})}
+      <div class="hint">Prozent = deine Erfolgsquote bei diesem Vorwurf.</div></div>
+
+    <div class="card"><h3>Verlauf letzte 12 Monate</h3>${monthChart(alle)}</div>
+  </div>`;
 }
 
 function monthChart(list){
@@ -1421,7 +1475,8 @@ function monthChart(list){
       seg(d.none,"bad")+seg(d.reduced,"warn")+seg(d.freed,"ok")+seg(d.open,"neutral")+'</div>').join("")+'</div>'+
     '<div class="chart-x">'+data.map(d=>'<span>'+d.lbl+'</span>').join("")+'</div>'+legend();
 }
-const legend=()=>'<div class="legend">'+Object.values(OUTCOMES).map(o=>'<span><b style="background:var(--'+o.cls+')"></b>'+o.lbl+'</span>').join("")+'</div>';
+const legend=()=>'<div class="legend">'+["freed","reduced","none","open"].map(k=>{const o=OUTCOMES[k];
+  return '<span><b style="background:var(--'+o.cls+')"></b>'+o.short+'</span>';}).join("")+'</div>';
 
 /* =============================================================================
    9) Ansicht: Mandanten
@@ -1475,17 +1530,17 @@ function vCases(){
   if(q) list=list.filter(c=>{const cl=client(c.clientId);
     return [c.caseNo,cl?.name,cl?.pass,cl?.phone,c.sta,(c.charges||[]).join(" "),(c.officers||[]).join(" "),c.agency,c.note]
       .join(" ").toLowerCase().includes(q);});
-  if(ui.fo) list=list.filter(c=>c.outcome===ui.fo);
+  if(ui.fo) list=list.filter(c=>ui.fo==="rev"?c.rev?.stand==="filed":endOutcome(c).k===ui.fo);
   if(ui.fsta) list=list.filter(c=>c.sta===ui.fsta);
   if(ui.fproc) list=list.filter(c=>c.procedure===ui.fproc);
   if(ui.ferr) list=list.filter(c=>errCount(c)>0);
   list.sort(byDateDesc);
   return `
-  <header class="top"><div><h2>Fälle</h2><div class="sub">${list.length} von ${DB.cases.length} angezeigt</div></div><div class="spacer"></div>
+  <header class="top"><div><h2>Fälle</h2><div class="sub">${list.length} von ${DB.cases.length} angezeigt${serieText()}</div></div><div class="spacer"></div>
     <button class="btn primary" data-act="newCase">＋ Neuer Fall</button></header>
   <div class="toolbar">
     <input type="search" id="fq" placeholder="Fallnr., Mandant, Reisepass, Delikt …" value="${esc(ui.fq||"")}">
-    <select id="fo"><option value="">Alle Ergebnisse</option>${Object.entries(OUTCOMES).map(([k,o])=>'<option value="'+k+'"'+(ui.fo===k?" selected":"")+'>'+o.lbl+'</option>').join("")}</select>
+    <select id="fo"><option value="">Alle Ergebnisse</option>${Object.entries(OUTCOMES).map(([k,o])=>'<option value="'+k+'"'+(ui.fo===k?" selected":"")+'>'+o.lbl+'</option>').join("")}<option value="rev"${ui.fo==="rev"?" selected":""}>Revision läuft</option></select>
     <select id="fproc"><option value="">Alle Verfahren</option>${Object.entries(PROCEDURES).map(([k,v])=>'<option value="'+k+'"'+(ui.fproc===k?" selected":"")+'>'+v+'</option>').join("")}</select>
     <select id="fsta"><option value="">Alle Staatsanwälte</option>${known("sta").map(s=>'<option'+(ui.fsta===s?" selected":"")+'>'+esc(s)+'</option>').join("")}</select>
     <button class="btn sm ${ui.ferr?"primary":""}" data-act="toggleErr">⚠ nur mit Abhandlungsfehler</button>
@@ -1498,19 +1553,19 @@ function caseTable(list,opt={}){
   return `<div class="tblwrap"><table>
     <thead><tr><th>Fallnr.</th><th>Datum</th><th>Mandant</th><th>Vorwürfe</th><th>Ergebnis</th><th>Verhängt</th><th>StA</th><th>Beamte</th><th>Hinweise</th></tr></thead>
     <tbody>${list.map(c=>{
-      const cl=client(c.clientId), o=outcomeInfo(c.outcome,c.procedure), ch=c.charges||[], red=reductionPct(c);
+      const cl=client(c.clientId), o=endInfo(c), ch=c.charges||[], red=reductionPct(c);
       const short=x=>{const e=catFind(x);return e?e.b+" "+e.p:x;};
-      const err=errCount(c), rv=revisionStatus(c), open=feeOpen(c);
+      const err=errCount(c), rv=REV[c.rev?.stand||"keine"], open=feeOpen(c);
       return `<tr class="click" data-case="${c.id}">
         <td class="mono"><b>${esc(c.caseNo||"–")}</b></td>
         <td class="mono">${dateDE(c.date)}</td>
         <td>${cl?esc(cl.name)+' <span class="muted mono">'+esc(cl.pass||"")+'</span>':'<span class="muted">unbekannt</span>'}</td>
         <td><div class="tags">${ch.slice(0,3).map(x=>'<span class="pill tag" title="'+esc(x)+'">'+esc(short(x))+'</span>').join("")||'<span class="muted">–</span>'}${ch.length>3?'<span class="pill tag">+'+(ch.length-3)+'</span>':""}</div></td>
-        <td><span class="pill ${o.cls}">${o.short}</span></td>
-        <td class="mono">${c.outcome==="freed"?'<span class="ok-tx">frei</span>':(c.final?.stars||0)+" ⭐"+((c.final?.fine)?" · "+money(c.final.fine):"")}${red!==null&&c.outcome==="reduced"?' <span class="muted">(−'+red+'%)</span>':""}</td>
+        <td><span class="pill ${o.cls}" ${o.viaRev?'title="über die Revision erreicht"':""}>${o.short}${o.viaRev?" §41":""}</span></td>
+        <td class="mono">${o.k==="freed"?'<span class="ok-tx">frei</span>':(c.final?.stars||0)+" ⭐"+((c.final?.fine)?" · "+money(c.final.fine):"")}${red!==null&&o.k==="reduced"?' <span class="muted">(−'+red+'%)</span>':""}</td>
         <td>${esc(c.sta||"–")}</td>
         <td><div class="tags">${(c.officers||[]).slice(0,2).map(x=>'<span class="pill tag">'+esc(x)+'</span>').join("")||'<span class="muted">–</span>'}${(c.officers||[]).length>2?'<span class="pill tag">+'+((c.officers||[]).length-2)+'</span>':""}</div></td>
-        <td><div class="tags">${err?'<span class="pill bad" title="Abhandlungsfehler nach §35 StPO">⚠ '+err+'</span>':""}${rv.s==="open"&&c.outcome!=="freed"?'<span class="pill '+rv.cls+'" title="'+rv.lbl+'">⏳</span>':""}${rv.s==="filed"?'<span class="pill ok" title="Revision eingereicht">§41</span>':""}${open?'<span class="pill bad" title="offenes Honorar">'+money(open)+'</span>':""}</div></td>
+        <td><div class="tags">${err?'<span class="pill bad" title="Abhandlungsfehler nach §35 StPO">⚠ '+err+'</span>':""}${c.rev?.stand==="filed"?'<span class="pill acc" title="Revision eingereicht'+(c.rev.ref?": "+esc(c.rev.ref):"")+'">§41</span>':""}${open?'<span class="pill bad" title="offenes Honorar">'+money(open)+'</span>':""}</div></td>
       </tr>`;}).join("")}</tbody></table></div>`;
 }
 
@@ -2083,7 +2138,6 @@ function tplBlock(zeile,d,x,v){
     const c=x.c;
     if(!c) return "";
     const r=(c.charges||[]).length?catSum(c.charges):null;
-    const rv=revisionStatus(c);
     const z=[];
     z.push(["Vorgang", (c.caseNo||"\u2014")+(c.date?" vom "+dateDE(c.date):"")]);
     if((c.charges||[]).length) z.push(["Tatvorwurf",(c.charges||[]).join("; ")]);
@@ -2096,8 +2150,9 @@ function tplBlock(zeile,d,x,v){
       z.push(["Verh\u00e4ngtes Strafma\u00df",(c.final.stars||0)+" Hafteinheiten und "+money(c.final.fine||0)]);
     if(r&&r.hits.length)
       z.push(["Zul\u00e4ssiges H\u00f6chstma\u00df",r.stars+" Hafteinheiten und "+money(r.fine)+" ("+STRAFREGELN[r.regel].ref+")"]);
-    z.push(["Ergebnis",outcomeInfo(c.outcome,c.procedure).lbl]);
-    if(c.revision&&c.revision.ref) z.push(["Revision",c.revision.ref+(rv.lbl?" \u2013 "+rv.lbl:"")]);
+    z.push(["Ergebnis der Abhandlung",outcomeInfo(c.outcome,c.procedure).lbl]);
+    if(c.rev&&c.rev.stand!=="keine")
+      z.push(["Revision",(c.rev.ref?c.rev.ref+" \u2013 ":"")+REV[c.rev.stand].lbl]);
     return '<h2 class="abschnitt">Zugrunde liegender Vorgang</h2>'+
       '<table class="pos vorgang"><tbody>'+
       z.map(p=>'<tr><td>'+esc(p[0])+'</td><td>'+esc(p[1])+'</td></tr>').join("")+
@@ -2863,6 +2918,21 @@ function mDoc(id,type,preset){
             : "Rechnung wieder offen";
       }
     }
+    /* Revisionsantrag: der Fall uebernimmt den Stand des Schriftsatzes - kein doppeltes Pflegen */
+    if(ziel.type==="revision"&&ziel.caseId){
+      const fall=DB.cases.find(x=>x.id===ziel.caseId);
+      if(fall){
+        fall.rev=fall.rev||{stand:"keine",ref:""};
+        const neu = ziel.status==="approved"  ? (fall.rev.stand==="part"?"part":"won")
+                  : ziel.status==="rejected"  ? "lost"
+                  : ziel.status==="submitted" ? "filed" : fall.rev.stand;
+        if(!fall.rev.ref&&ziel.no) fall.rev.ref=ziel.no;
+        if(neu!==fall.rev.stand){
+          fall.rev.stand=neu;
+          meldung=(meldung?meldung+" · ":"")+"Fall "+(fall.caseNo||"")+": Revision "+REV[neu].lbl;
+        }
+      }
+    }
     save();closeModal();render();
     toast(meldung||(d?"Schriftsatz aktualisiert":"Schriftsatz gespeichert"));
   };
@@ -3155,7 +3225,7 @@ function faellePick(){
   return [...DB.cases].sort(byDateDesc).map(c=>{const cl=client(c.clientId);
     return {id:c.id,t:(c.caseNo||"ohne Nummer")+" · "+(cl?cl.name:"?"),
       s:[dateDE(c.date),(c.charges||[]).slice(0,2).map(x=>{const e=catFind(x);return e?e.b+" "+e.p:x;}).join(", "),
-         outcomeInfo(c.outcome,c.procedure).short].filter(Boolean).join(" · ")};});
+         endInfo(c).short].filter(Boolean).join(" · ")};});
 }
 
 
@@ -3640,10 +3710,9 @@ function mCase(id,presetClient){
       </div>
 
       <div data-cpane="strafe" hidden>
-        <div class="sec-title" style="margin-top:0">Ergebnis</div>
+        <div class="sec-title" style="margin-top:0">Ergebnis der Abhandlung</div>
         <div class="seg-ctl" data-seg="outcome" id="outcomeSeg"></div>
         <input type="hidden" name="outcome" value="${outcome}">
-        <div class="hint" id="outcomeHint"></div>
         <div class="f-row" style="margin-top:16px">
           <div><div class="dt" style="margin-bottom:6px">Gefordert / angedroht
             <span class="muted" style="font-weight:400">– folgt automatisch den Vorwürfen</span></div>
@@ -3660,16 +3729,14 @@ function mCase(id,presetClient){
         <div id="strafeInfo"></div>
 
         <div class="sec-title">Revision</div>
-        <div class="f-row three">
-          <label class="f"><span>Urteil / Strafeintrag am</span><input type="date" name="verdictAt" value="${esc(c?.verdictAt||"")}"></label>
+        <div class="seg-ctl" data-seg="revStand" id="revSeg"></div>
+        <input type="hidden" name="revStand" value="${c?.rev?.stand||"keine"}">
+        <div class="f-row" id="revRefRow" style="margin-top:12px">
           <label class="f"><span>Aktenzeichen (§41 II StPO)</span>
-            <div style="display:flex;gap:6px"><input type="text" name="revRef" value="${esc(c?.revision?.ref||"")}" placeholder="A-RA-XX-2026-01">
+            <div style="display:flex;gap:6px"><input type="text" name="revRef" value="${esc(c?.rev?.ref||"")}" placeholder="A-RA-XX-2026-01">
             <button type="button" class="btn sm" data-act="genRef" title="Aktenzeichen erzeugen">⟳</button></div></label>
-          <label class="f"><span>Ausgang der Revision</span><input type="text" name="revResult" value="${esc(c?.revision?.result||"")}" placeholder="z. B. stattgegeben"></label>
         </div>
-        <label class="chk"><input type="checkbox" name="revFiled" ${c?.revision?.filed?"checked":""}>
-          <div><div class="t">Revision eingereicht</div><div class="s">Frist: 72 Stunden ab dem Folgetag des Urteils (§41 I StPO)</div></div></label>
-        <div id="fristInfo"></div>
+        <div id="endStand"></div>
       </div>
 
       <div data-cpane="honorar" hidden>
@@ -3753,15 +3820,20 @@ function mCase(id,presetClient){
       ${r.notes.length?'<div class="box warn">'+r.notes.map(esc).join("<br>")+'</div>':""}`;
   };
 
-  /* Ergebnisknöpfe neu beschriften, wenn die Verfahrensart wechselt */
+  /* Ergebnis, Revision und der Endstand, der sich daraus ergibt */
   const drawOutcome=()=>{
-    const proc=form.procedure.value, akt=form.outcome.value;
-    form.querySelector("#outcomeSeg").innerHTML=Object.keys(OUTCOMES).map(k=>{
-      const o=outcomeInfo(k,proc);
-      return '<button type="button" data-v="'+k+'" class="'+(akt===k?"on":"")+'">'+esc(o.lbl)+'</button>';
-    }).join("");
-    form.querySelector("#outcomeHint").textContent =
-      (proc==="revision"||proc==="gericht") ? "Zwischenstand wählen, solange noch entschieden wird." : "";
+    const proc=form.procedure.value, akt=form.outcome.value, st=form.revStand.value;
+    form.querySelector("#outcomeSeg").innerHTML=Object.keys(OUTCOMES).map(k=>
+      '<button type="button" data-v="'+k+'" class="'+(akt===k?"on":"")+'">'+esc(outcomeInfo(k,proc).lbl)+'</button>').join("");
+    form.querySelector("#revSeg").innerHTML=Object.entries(REV).map(([k,r])=>
+      '<button type="button" data-v="'+k+'" class="'+(st===k?"on":"")+'">'+esc(r.lbl)+'</button>').join("");
+    form.querySelector("#revRefRow").hidden = st==="keine";
+    const e=endInfo({outcome:akt,procedure:proc,rev:{stand:st}});
+    form.querySelector("#endStand").innerHTML = st==="keine" ? "" :
+      '<div class="box '+(e.cls==="ok"?"ok":e.cls==="bad"?"bad":"info")+'" style="margin-top:12px">Endstand: <b>'+esc(e.lbl)+'</b>'+
+      (e.viaRev?" – über die Revision erreicht"
+       :st==="filed"?" – der Fall zählt als offen, solange die Revision läuft"
+       :" – die Revision hat am Ergebnis nichts geändert")+'</div>';
   };
   const drawStrafe=()=>{
     const box=form.querySelector("#strafeInfo"), s=snapshot(), r=catSum(s.charges);
@@ -3781,15 +3853,6 @@ function mCase(id,presetClient){
           <span class="muted">(${fs} ⭐ × ${money(ENTSCHAEDIGUNG_JE_HE)} + Geldstrafe + Anwaltskosten)</span>
         </div>
       </div>`;
-  };
-
-  /* Nur noch die Revisionsfrist – die Abhandlungszeit prüft der Nutzer selbst */
-  const drawFehler=()=>{
-    const vd=form.verdictAt.value, fi=form.querySelector("#fristInfo");
-    if(!vd){ fi.innerHTML='<div class="hint">Urteilsdatum eintragen \u2013 die 72-Stunden-Frist wird dann berechnet.</div>'; return; }
-    const st=revisionStatus({verdictAt:vd,revision:{filed:form.revFiled.checked}});
-    const dl=revisionDeadline({verdictAt:vd});
-    fi.innerHTML=`<div class="box ${st.cls==="bad"?"bad":st.cls==="ok"?"ok":"warn"}">${st.lbl}${st.s!=="filed"?" \u2013 Fristende "+dl.toLocaleString("de-DE"):""}</div>`;
   };
 
   /* Geforderte Strafe folgt den angeklickten Vorwuerfen, solange nichts von Hand eingetragen wurde */
@@ -3839,7 +3902,7 @@ function mCase(id,presetClient){
     form.querySelector("#feeHint").innerHTML="Höchstsatz: <b>"+money(ravoMax(t,form.querySelector("#feeQty").value))+"</b> ("+r.ref+", "+r.unit+")";
   };
 
-  const refresh=()=>{drawCat();drawCalc();drawStrafe();drawFehler();drawFees();drawOutcome();};
+  const refresh=()=>{drawCat();drawCalc();drawStrafe();drawFees();drawOutcome();};
   bindTags(form,()=>{autoDemand();drawCat();drawCalc();drawStrafe();});
   refresh();
   showPane(tab());
@@ -3853,13 +3916,11 @@ function mCase(id,presetClient){
   form.querySelector("#catSearch").addEventListener("input",e=>{catQ=e.target.value;drawCat();});
   form.addEventListener("input",e=>{
     if(["ds","df","fs","ff"].includes(e.target.name)) drawStrafe();
-    if(e.target.name==="verdictAt") drawFehler();
     if(e.target.name==="ds"||e.target.name==="df") demandFest=true;
     if(e.target.id==="feeQty") drawFees();
   });
   form.addEventListener("change",e=>{
     if(e.target.name==="procedure") drawOutcome();
-    if(e.target.name==="revFiled") drawFehler();
     if(e.target.id==="feeType") drawFees();
   });
   form.addEventListener("click",e=>{
@@ -3884,9 +3945,9 @@ function mCase(id,presetClient){
     }
     const seg=t.closest("[data-seg] button[data-v]");
     if(seg){
-      form.querySelectorAll("[data-seg] button").forEach(x=>x.classList.toggle("on",x===seg));
-      form.outcome.value=seg.dataset.v;
+      form[seg.closest("[data-seg]").dataset.seg].value=seg.dataset.v;
       if(seg.dataset.v==="freed"){form.fs.value=0;form.ff.value=0;drawStrafe();}
+      drawOutcome();
       return;
     }
     const act=t.closest("[data-act]");
@@ -3930,8 +3991,8 @@ function mCase(id,presetClient){
       demand:{stars:num("ds"),fine:num("df")}, final:{stars:num("fs"),fine:num("ff")},
       cuffAt:f.get("cuffAt")||"", endAt:c?.endAt??"", emsPause:c?.emsPause??0,
       belehrungMin:c?.belehrungMin??"", lawyerCalled:!!c?.lawyerCalled,
-      errors, verdictAt:f.get("verdictAt")||"",
-      revision:{filed:!!f.get("revFiled"),ref:(f.get("revRef")||"").trim(),result:(f.get("revResult")||"").trim()},
+      errors,
+      rev:{stand:f.get("revStand")||"keine",ref:(f.get("revRef")||"").trim()},
       fees, note:(f.get("note")||"").trim()
     };
     if(c) Object.assign(c,obj,{updated:new Date().toISOString()});
@@ -3945,11 +4006,11 @@ function mCase(id,presetClient){
    ============================================================================= */
 function mCaseView(id){
   const c=DB.cases.find(x=>x.id===id); if(!c) return;
-  const cl=client(c.clientId), o=outcomeInfo(c.outcome,c.procedure), sv=saved(c), red=reductionPct(c);
-  const r=catSum(c.charges), errs=allErrors(c), rv=revisionStatus(c), vj=verjaehrung(c);
+  const cl=client(c.clientId), o=endInfo(c), sv=saved(c), red=reductionPct(c);
+  const r=catSum(c.charges), errs=allErrors(c), rv=REV[c.rev?.stand||"keine"], vj=verjaehrung(c);
   const d=(t,v)=>'<div><div class="dt">'+t+'</div><div class="dd">'+v+'</div></div>';
   const zuHoch=r.hits.length&&((c.final?.stars||0)>r.stars||(c.final?.fine||0)>r.fine);
-  openModal(`<div class="modal-h"><h3>${esc(c.caseNo||"Fall")}</h3><span class="pill ${o.cls}">${o.lbl}</span>
+  openModal(`<div class="modal-h"><h3>${esc(c.caseNo||"Fall")}</h3><span class="pill ${o.cls}" ${o.viaRev?'title="über die Revision erreicht"':""}>${o.lbl}${o.viaRev?" (Revision)":""}</span>
       ${Object.keys(errs).length?'<span class="pill bad">§35 StPO · '+Object.keys(errs).length+'</span>':""}
       <button type="button" class="x" data-act="close">×</button></div>
     <div class="modal-b">
@@ -3991,7 +4052,7 @@ function mCaseView(id){
 
       <div class="detail-grid" style="margin-top:16px">
         ${d("Handschellen um",c.cuffAt?'<span class="mono">'+esc(c.cuffAt)+' Uhr</span>':'<span class="muted">nicht erfasst</span>')}
-        ${d("Revision",rv.lbl?'<span class="'+(rv.cls==="bad"?"bad-tx":rv.cls==="ok"?"ok-tx":"warn-tx")+'">'+esc(rv.lbl)+'</span>'+(c.revision?.ref?'<div class="mono muted" style="font-size:12px">'+esc(c.revision.ref)+'</div>':""):'<span class="muted">–</span>')}
+        ${d("Revision",c.rev?.stand!=="keine"?'<span class="pill '+rv.cls+'">'+esc(rv.lbl)+'</span>'+(c.rev.ref?'<div class="mono muted" style="font-size:12px">'+esc(c.rev.ref)+'</div>':""):'<span class="muted">–</span>')}
         ${d("Verjährung §19 StPO",vj?(vj.left>0?'in '+vj.left+' Tagen ('+vj.date.toLocaleDateString("de-DE")+')':'<span class="muted">verjährt seit '+vj.date.toLocaleDateString("de-DE")+'</span>'):'–')}
       </div>
 
@@ -4143,10 +4204,10 @@ function exportCasesCsv(){
   [...DB.cases].sort(byDateDesc).forEach(c=>{
     const cl=client(c.clientId), sv=saved(c), r=catSum(c.charges), errs=Object.keys(allErrors(c));
     rows.push([c.caseNo,c.date,cl?.name||"",cl?.pass||"",cl?.phone||"",PROCEDURES[c.procedure]||"",
-      (c.charges||[]).join(" | "),outcomeInfo(c.outcome,c.procedure).lbl,
+      (c.charges||[]).join(" | "),endInfo(c).lbl,
       c.demand?.stars||0,c.demand?.fine||0,c.final?.stars||0,c.final?.fine||0,sv.stars,sv.fine,
       r.stars,r.fine,errs.map(k=>(FEHLER.find(f=>f.k===k)||{}).t||k).join(" | "),
-      c.revision?.filed?(c.revision.ref||"ja"):"",
+      c.rev?.stand!=="keine"?REV[c.rev.stand].lbl+(c.rev.ref?" ("+c.rev.ref+")":""):"",
       c.sta||"",(c.officers||[]).join(" | "),c.agency||"",feeTotal(c),feeOpen(c),(c.note||"").replace(/\n/g," ")]);
   });
   dl("faelle_"+stamp()+".csv",csv(rows),"text/csv");
@@ -4417,6 +4478,8 @@ document.addEventListener("click",e=>{
   if(nd){e.preventDefault();closeModal();return mDoc(null,nd.dataset.newdoc);}
   const tf=e.target.closest("[data-tplfilter]");
   if(tf){ui.atype=tf.dataset.tplfilter;ui.astatus="";ui.aq="";return go("antrag");}
+  const fo=e.target.closest("[data-fo]");
+  if(fo){ui.fo=fo.dataset.fo;ui.fq="";return go("cases");}
   const dr=e.target.closest("[data-doc]");
   if(dr){e.preventDefault();return mDocView(dr.dataset.doc);}
   const cr=e.target.closest("[data-case]");
