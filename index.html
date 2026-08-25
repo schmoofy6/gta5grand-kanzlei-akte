@@ -390,7 +390,7 @@ html.modal-offen,html.modal-offen body{overflow:hidden}
 <body>
 <div id="app">
   <aside id="side">
-    <div class="brand"><h1>⚖️ Kanzlei-Akte</h1><span>Mandantenverwaltung</span></div>
+    <div class="brand"><h1>⚖️ Kanzlei-Akte</h1><span id="stand">Mandantenverwaltung</span></div>
     <div class="lawbar" id="lawbar"></div>
     <nav id="nav"></nav>
     <div class="side-foot"><div class="row">
@@ -537,6 +537,7 @@ const RAVO_BUSSE_MAX=300000;      /* RAVO §10 III */
 const WANTED_WERT=20000;          /* StPO §3 VI und VIII: 1 Hafteinheit = 20.000 $ */
 const KAUTION_FAKTOR=2;           /* StPO §22 II: 200 % der Wanteds */
 const KAUTION_MAX_HE=3;           /* StPO §22 III: ab 4 Hafteinheiten keine Kaution */
+const STAND="26.08.2026";         /* Datum dieser Fassung - steht oben in der Leiste */
 const VERJAEHRUNG_TAGE=14;        /* StPO §19 I */
 const ENTSCHAEDIGUNG_JE_HE=25000; /* StPO §23 V */
 const DOKU_TAGE=14;               /* RAVO §3 VI */
@@ -4850,6 +4851,8 @@ window.addEventListener("beforeunload",save);
    Start
    ============================================================================= */
 document.documentElement.dataset.theme=DB.theme||"dark";
+/* Damit auf einen Blick sichtbar ist, ob die Datei aktuell ist */
+document.getElementById("stand").textContent="Stand "+STAND;
 render();
 setSaveState("💾 in diesem Browser gespeichert","var(--tx3)");
 </script>
