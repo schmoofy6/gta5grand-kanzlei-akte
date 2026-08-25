@@ -1662,7 +1662,9 @@ revision:{lbl:"Revisionsantrag",kurz:"RA",ico:"⚖️",phase:"angriff",wann:"Bei
     {k:"antraege",l:"Zusätzliche Anträge (optional)",t:"area",
      hint:"Feststellung, Aufhebung, Löschung und Erstattung stehen bereits automatisch im Katalog"},
     {k:"entsch",l:"Erstattung nach §23 V StPO mitbeantragen",t:"check",def:1,
-     hint:"Hafteinheiten und Geldstrafe – Anwaltskosten nur aus der Verteidigung im Schnellverfahren, schriftliche Anträge werden nicht erstattet"},
+     hint:"ohne eigene Aufstellung: Hafteinheiten und Geldstrafe aus der Strafakte"},
+    {k:"erstattung",l:"Erstattung – eigene Aufstellung (optional)",t:"area",
+     hint:"eine Zeile je Posten, Schema: Bezeichnung – Betrag. Steht hier etwas, gilt genau das. Leer lassen = automatisch aus der Strafakte"},
     {k:"tage",l:"Tage Dienstausfall (optional)",t:"num",hint:"§23 III StPO – höchstens 50.000 $ pro Tag"}],
   text:`namens und in Vollmacht meiner Mandantschaft {mandant}, Reisepass-Nummer {reisepass}, Telefon-Nummer {telefon}, lege ich gegen die am {tatdatum} ergangene Verurteilung wegen {vorwuerfe} gemäß §§ 39, 41 StPO fristgerecht Revision ein.
 
@@ -1762,6 +1764,8 @@ entschaedigung:{lbl:"Antrag auf Entschädigung",kurz:"EN",ico:"💵",phase:"dana
      opts:["Verfahrensfehler nach §35 StPO","erfolgreiche Revision",
            "zu Unrecht konfiszierte Gegenstände (§26 Abs. 5 StPO)","Dienstausfall durch falsche Maßnahme"]},
     {k:"tage",l:"Tage Dienstausfall (optional)",t:"num",hint:"§23 III StPO – höchstens 50.000 $ pro Tag"},
+    {k:"erstattung",l:"Erstattung – eigene Aufstellung (optional)",t:"area",
+     hint:"eine Zeile je Posten, Schema: Bezeichnung – Betrag. Steht hier etwas, gilt genau das. Leer lassen = automatisch aus der Strafakte"},
     {k:"detail",l:"Sachverhalt",t:"area",req:1},
     {k:"loesch",l:"Löschung der Eintragung mitbeantragen",t:"check",def:1,
      hint:"§19 Abs. 4 StPO – spart einen eigenen Schriftsatz"},
@@ -2291,7 +2295,19 @@ function datenBlock(d,x){
 }
 /* Forderung nach §23 V StPO: Hafteinheiten und Geldstrafe, dazu ein etwaiger
    Dienstausfall. Anwaltskosten nur, soweit sie erstattungsfähig sind.       */
+/* "Bezeichnung – 30000" je Zeile. Die letzte Zahl der Zeile ist der Betrag. */
+function eigeneForderung(d){
+  return String(d.erstattung||"").split(/\n+/).map(z=>z.trim()).filter(Boolean).map(z=>{
+    const m=z.match(/(-?[\d.,]+)\s*\$?\s*$/);
+    const betrag=m?Math.round(Number(m[1].replace(/\./g,"").replace(",","."))||0):0;
+    let lbl=(m?z.slice(0,m.index):z).replace(/[–—:-]\s*$/,"").trim();
+    return [lbl||"Erstattung", betrag];
+  });
+}
 function forderung(d,c){
+  /* Von Hand eingetragen? Dann gilt genau das und nichts anderes. */
+  const eigen=eigeneForderung(d);
+  if(eigen.length) return {rows:eigen, summe:eigen.reduce((a,r)=>a+r[1],0), selbst:true};
   const he=(c&&c.final&&c.final.stars)||0, geld=(c&&c.final&&c.final.fine)||0;
   const tage=+d.tage||0;
   /* Gefordert wird die Strafe. Von den Anwaltskosten ist nur die Verteidigung
