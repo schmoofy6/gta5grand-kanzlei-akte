@@ -2186,6 +2186,12 @@ function tplOf(key){
   if(!base&&!ov) return null;
   const t=Object.assign({},base||{},ov||{});
   if(!t.fields) t.fields=[];
+  /* Eine selbst bearbeitete Vorlage friert ihre Feldliste ein. Damit später
+     ergänzte Standardfelder trotzdem ankommen, werden sie hinten angehängt. */
+  if(base&&ov&&Array.isArray(ov.fields)){
+    const neu=(base.fields||[]).filter(f=>!t.fields.some(x=>x.k===f.k));
+    if(neu.length) t.fields=t.fields.concat(neu.map(f=>Object.assign({},f,{nachgereicht:1})));
+  }
   if(!t.fee) t.fee="antrag";
   if(!t.kurz) t.kurz="XX";
   if(!t.ico) t.ico="📄";
