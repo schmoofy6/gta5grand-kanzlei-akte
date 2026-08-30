@@ -2912,6 +2912,55 @@ function mTplNew(){
 }
 
 /* --- Schriftsatz anlegen / bearbeiten --- */
+/* =============================================================================
+   Angaben am Stück einfügen: ein Block „Feldname: Wert“ füllt das ganze Formular.
+   Mehrzeilige Werte laufen bis zur nächsten erkannten Feldzeile.
+   ============================================================================= */
+const BULK_BASIS=[{k:"no",l:"Aktenzeichen"},{k:"date",l:"Datum",t:"date"},
+                  {k:"extName",l:"Name"},{k:"extPass",l:"Reisepassnummer"},
+                  {k:"extPhone",l:"Telefonnummer"},{k:"fee",l:"Gebühr",t:"num"},
+                  {k:"note",l:"Interne Notizen"}];
+const bulkFelder=t=>(t.fields||[]).filter(f=>f.t!=="posten").concat(BULK_BASIS);
+const bulkNorm=x=>String(x||"").toLowerCase().replace(/\(optional\)/g,"")
+  .replace(/[^a-z0-9äöüß]+/g,"");
+function bulkParse(t,text){
+  const alle=bulkFelder(t);
+  const finde=name=>{const n=bulkNorm(name); if(!n) return null;
+    return alle.find(f=>bulkNorm(f.l)===n)||alle.find(f=>bulkNorm(f.k)===n)
+        || alle.find(f=>bulkNorm(f.l).startsWith(n))||null;};
+  const out=[]; let akt=null, buf=[];
+  const zu=()=>{ if(akt) out.push([akt,buf.join("\n").trim()]); akt=null; buf=[]; };
+  String(text||"").split(/\r?\n/).forEach(z=>{
+    const m=/^\s*(?:[*#>-]\s*)*([^:\n]{2,70}?)\s*:\s*(.*)$/.exec(z);
+    const f=m?finde(m[1].replace(/\*+/g,"")):null;
+    if(f){ zu(); akt=f; if(m[2].trim()) buf.push(m[2]); }
+    else if(akt) buf.push(z);
+  });
+  zu();
+  return out;
+}
+function bulkAnwenden(form,t,text){
+  let n=0;
+  bulkParse(t,text).forEach(([f,val])=>{
+    const el=form.elements[f.k]; if(!el||el.length) return;
+    const v=val.trim();
+    if(el.type==="checkbox"){ el.checked=/^(ja|x|✔|✓|true|1|anhaken)$/i.test(v); n++; return; }
+    if(el.type==="date"){
+      const m=/^(\d{1,2})[.\/](\d{1,2})[.\/](\d{4})/.exec(v);
+      el.value=m?m[3]+"-"+m[2].padStart(2,"0")+"-"+m[1].padStart(2,"0"):v; n++; return;
+    }
+    if(el.tagName==="SELECT"){
+      const o=[...el.options].find(x=>x.text.trim().toLowerCase()===v.toLowerCase())
+           ||[...el.options].find(x=>v&&x.text.toLowerCase().includes(v.toLowerCase()));
+      if(o){ el.value=o.value; n++; } return;
+    }
+    if(el.type==="number"){ el.value=v.replace(/[^\d]/g,""); n++; return; }
+    el.value=val.replace(/^\n+|\n+$/g,""); n++;
+  });
+  return n;
+}
+const bulkGeruest=t=>bulkFelder(t).map(f=>f.l+": ").join("\n");
+
 function mDoc(id,type,preset){
   const d=id?DB.docs.find(x=>x.id===id):null;
   const tp=d?d.type:(type||"akte"), t=tplOf(tp)||tplOf("akte");
@@ -2980,7 +3029,19 @@ function mDoc(id,type,preset){
           ${pickerField("caseId","",faellePick(),cur.caseId,"Fallnummer oder Mandant …")}
           <button type="button" class="btn sm" data-act="fromCase" title="Angaben aus dem Verfahren übernehmen">⤵ übernehmen</button>
         </div></label>
-      ${(t.fields||[]).length?'<div class="sec-title">Inhalt</div>':""}
+      ${(t.fields||[]).length?`<div class="sec-title">Inhalt
+        <button type="button" class="btn ghost sm" data-act="bulkOpen"
+          style="float:right;text-transform:none;letter-spacing:0">📋 Alles auf einmal einfügen</button></div>
+      <div id="bulkBox" hidden style="margin-bottom:14px">
+        <label class="f"><span>Angaben einfügen</span>
+          <textarea id="bulkText" rows="10" placeholder="Feldname: Wert"></textarea>
+          <div class="hint">Eine Zeile <b>Feldname: Wert</b> je Angabe – mehrzeilige Texte laufen bis zur nächsten
+            Feldzeile. Erkannt werden die Beschriftungen dieses Schriftsatzes. Ankreuzfelder mit <b>ja</b>,
+            Datum als <b>29.08.2026</b>. Mandantschaft und Verfahren wählst du weiterhin oben aus.</div></label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn primary" data-act="bulkFill">Übernehmen</button>
+          <button type="button" class="btn ghost" data-act="bulkCancel">Schließen</button></div>
+      </div>`:""}
       ${(t.fields||[]).map(feld).join("")}
 
       <div class="sec-title">Wortlaut
@@ -3175,6 +3236,23 @@ function mDoc(id,type,preset){
     const a=e.target.closest("[data-act]"); if(!a) return;
     const act=a.dataset.act;
     if(act==="genDocRef"){e.preventDefault();form.no.value=makeRef(t.kurz,form.clientId.value);return;}
+    if(act==="bulkOpen"){
+      e.preventDefault();
+      const box=form.querySelector("#bulkBox"), ta=form.querySelector("#bulkText");
+      box.hidden=!box.hidden;
+      if(!box.hidden){ if(!ta.value.trim()) ta.value=bulkGeruest(t); ta.focus(); ta.select(); }
+      return;
+    }
+    if(act==="bulkCancel"){ e.preventDefault(); form.querySelector("#bulkBox").hidden=true; return; }
+    if(act==="bulkFill"){
+      e.preventDefault();
+      const n=bulkAnwenden(form,t,form.querySelector("#bulkText").value);
+      if(!n) return toast("Keine passende Feldzeile gefunden");
+      form.querySelector("#bulkBox").hidden=true;
+      form.querySelector("#bulkText").value="";
+      draw(); toast(n+(n===1?" Angabe":" Angaben")+" übernommen");
+      return;
+    }
     if(act==="docFeeMax"){e.preventDefault();
       if(form.probono&&form.probono.checked) return toast("Pro bono und Gebühr schließen sich aus");
       form.fee.value=ravoMaxOf(t.fee);draw();return;}
