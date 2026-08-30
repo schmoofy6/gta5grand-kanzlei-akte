@@ -1652,7 +1652,7 @@ Ich bitte um eine zeitnahe Übersendung der Akten oder Mitteilung eines Termins 
 revision:{lbl:"Revisionsantrag",kurz:"RA",ico:"⚖️",phase:"angriff",wann:"Bei jedem Abhandlungsfehler. Enthält Feststellung, Aufhebung, Löschung und Erstattung in einem.",
   an:"An das Revisionsgericht des Staates San Andreas",fee:"revision",ref:"§§ 39, 41 StPO",caseRef:1,
   frist:"72 Stunden ab dem Folgetag des Urteils (§41 I StPO)",
-  hinweis:"Die Revision kann nur auf eine Verletzung des Gesetzes gestützt werden (§39 StPO). Die Beweise müssen im Antrag enthalten sein und die Begründetheit belegen (§41 III StPO).",
+  hinweis:"Die Revision kann nur auf eine Verletzung des Gesetzes gestützt werden (§39 StPO). §35 wird nur behauptet, wenn im Fall auch ein Abhandlungsfehler angehakt ist – eine pauschale §35-Berufung ohne Nummer wird zurückgewiesen. Die Beweise müssen im Antrag enthalten sein und die Begründetheit belegen (§41 III StPO).",
   betreff:"Revisionsantrag{fall_kurz}",
   fields:[
     {k:"sachverhalt",l:"Sachverhalt",t:"area",req:1,hint:"Was ist tatsächlich passiert? Wird der rechtlichen Würdigung vorangestellt."},
@@ -1669,7 +1669,7 @@ revision:{lbl:"Revisionsantrag",kurz:"RA",ico:"⚖️",phase:"angriff",wann:"Bei
     {k:"tage",l:"Tage Dienstausfall (optional)",t:"num",hint:"§23 III StPO – höchstens 50.000 $ pro Tag"}],
   text:`namens und in Vollmacht meiner Mandantschaft {mandant}, Reisepass-Nummer {reisepass}, Telefon-Nummer {telefon}, lege ich gegen die am {tatdatum} ergangene Verurteilung wegen {vorwuerfe} gemäß §§ 39, 41 StPO fristgerecht Revision ein.
 
-Die Revision stützt sich auf einen Abhandlungsfehler gemäß § 35 StPO.
+{grundsatz}
 
 I. SACHVERHALT
 
@@ -2231,6 +2231,19 @@ function tplWerte(t,d,x){
     const alles=[d.firma,d.zweck,d.toechter].join(" ");
     v.dietrich=/schl\u00fcssel|schliess|schlie\u00df|locksmith|schloss/i.test(alles)?"ja":"";
   }
+  /* Revisionsantrag: §35 nur behaupten, wenn im Fall auch ein §35-Fehler angehakt ist.
+     Sonst tragen §39 I/II - eine pauschale §35-Behauptung wird sonst zerlegt. */
+  if(d.type==="revision"){
+    const nrn=Object.keys(allErrors(c)).map(k=>{
+      const f=FEHLER.find(x=>x.k===k), m=f&&/§35 Nr\. ?([\w/]+)/.exec(f.s);
+      return m?m[1]:null;
+    }).filter(Boolean);
+    v.grundsatz = nrn.length
+      ? "Die Revision st\u00fctzt sich auf einen Abhandlungsfehler gem\u00e4\u00df \u00a7 35 Nr. "+
+        [...new Set(nrn)].join(", ")+" StPO. In diesen F\u00e4llen ist der Beschuldigte freizusprechen und freizulassen."
+      : "Die Revision wird auf eine Verletzung des Gesetzes gem\u00e4\u00df \u00a7 39 Abs. 1 StPO gest\u00fctzt. "+
+        "Nach \u00a7 39 Abs. 2 StPO ist das Gesetz verletzt, wenn eine Rechtsnorm nicht oder nicht richtig angewendet worden ist.";
+  }
   /* Zeugenladung: dieselbe Vorlage an den Zeugen oder als Liste ans Gericht */
   if(t.fields&&t.fields.some(f=>f.k==="zeuge")){
     v.gericht=/Gericht/i.test(String(d.empfaenger||""))?"ja":"";
@@ -2259,6 +2272,9 @@ function tplWerte(t,d,x){
   });
   return v;
 }
+/* Diese Platzhalter sind Zusaetze, keine Angaben: bleiben sie leer, fallen sie
+   ersatzlos weg - ein Gedankenstrich im Betreff sieht nach Fehler aus. */
+const TPL_OPTIONAL=new Set(["fall_kurz","streit_kurz","gebuehr","entschaedigung","termin_lang","zulaessig","verhaengt"]);
 /* {feld} einsetzen · {feld? Text mit {feld}} nur wenn gefüllt */
 function fillTpl(str,v){
   let s=String(str||"");
@@ -2266,7 +2282,7 @@ function fillTpl(str,v){
     v[k.toLowerCase()]?inner.replace(/\{(\w+)\}/g,(m2,k2)=>v[k2.toLowerCase()]||""):"");
   return s.replace(/\{(\w+)\}/g,(m,k)=>{
     const val=v[k.toLowerCase()];
-    return val===undefined?m:(val===""?"—":val);
+    return val===undefined?m:(val===""?(TPL_OPTIONAL.has(k.toLowerCase())?"":"—"):val);
   });
 }
 /* Wie fillTpl, nur fürs Dokument: eingesetzte Angaben werden hervorgehoben,
@@ -2277,6 +2293,7 @@ function fillTplHtml(str,v,t){
   const wert=k=>{
     const val=v[k.toLowerCase()];
     if(val===undefined) return null;
+    if(val===""&&TPL_OPTIONAL.has(k.toLowerCase())) return "";
     const txt=esc(val===""?"—":val);
     return fliess.has(k.toLowerCase())?txt:'<b>'+txt+'</b>';
   };
@@ -2557,7 +2574,7 @@ function docHtml(d){
     </div>
     <div class="fuss">
       Rechtsgrundlage: ${esc(t.ref||"—")}.${t.frist?" Frist: "+esc(t.frist)+".":""}
-      ${t.noFee?"":" Gebühr für diesen Schriftsatz: "+(d.probono?money(0):(d.fee?money(d.fee):"—"))+
+      ${(t.noFee||(!d.fee&&!d.probono))?"":" Gebühr für diesen Schriftsatz: "+(d.probono?money(0):money(d.fee))+
         " (Höchstsatz "+money(ravoMaxOf(t.fee))+" nach "+esc(RAVO[t.fee].ref)+")."}
       ${kopf.length?" · "+esc(kopf[0]):""}
     </div>
